@@ -1,4 +1,4 @@
-# Chapter 10: The Coordinator Pattern -- Multi-Agent Enterprise Orchestration
+# Chapter 11: The Coordinator Pattern -- Multi-Agent Enterprise Orchestration
 
 > **Learning Objectives:**
 > - Understand the "coordinator-worker" architecture of the Coordinator pattern and its design motivations
@@ -14,7 +14,7 @@ This chapter will dive deep into the source code design, revealing the design ph
 
 ---
 
-## 10.1 Coordinator Architecture
+## 11.1 Coordinator Architecture
 
 ### The coordinatorMode Core Module
 
@@ -114,7 +114,7 @@ graph LR
 
 ---
 
-## 10.2 Worker Tool Allocation
+## 11.2 Worker Tool Allocation
 
 ### INTERNAL_WORKER_TOOLS
 
@@ -185,7 +185,7 @@ This design decision reflects an important principle: **workers are executors an
 
 ---
 
-## 10.3 Team Management
+## 11.3 Team Management
 
 ### TeamCreateTool / TeamDeleteTool
 
@@ -269,7 +269,7 @@ The message sending tool's intelligent routing mechanism is particularly notewor
 
 ---
 
-## 10.4 Collaboration Space
+## 11.4 Collaboration Space
 
 ### Scratchpad Collaboration Space Design
 
@@ -448,7 +448,7 @@ This format is designed to be embedded in user-role messages. The coordinator id
 
 ---
 
-## 10.5 Complete Case Study: From Requirements to Delivery
+## 11.5 Complete Case Study: From Requirements to Delivery
 
 Let's understand the Coordinator pattern's end-to-end workflow through a complete case study.
 
@@ -541,7 +541,7 @@ Coordinator Decision:
 
 ---
 
-## 10.6 Fault Recovery and Partial Completion
+## 11.6 Fault Recovery and Partial Completion
 
 ### Handling Strategies for Worker Failures
 
@@ -585,7 +585,7 @@ The guiding principle in the system prompt is: **the coordinator should make ful
 
 ---
 
-## 10.7 Coordinator Pattern vs. Fork Pattern Comparison
+## 11.7 Coordinator Pattern vs. Fork Pattern Comparison
 
 The two patterns represent different parallelism strategies, and choosing the correct one is critical for task success.
 

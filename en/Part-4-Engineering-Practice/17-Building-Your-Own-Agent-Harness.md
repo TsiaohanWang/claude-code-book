@@ -1,4 +1,4 @@
-# Chapter 15: Building Your Own Agent Harness
+# Chapter 17: Building Your Own Agent Harness
 
 > "The rules of thinking are lengthy and fortuitous. They require plenty of thinking of most long duration and deep meditation for a wizard to wrap one's noggin around."
 > -- Comment in Claude Code
@@ -7,7 +7,7 @@
 
 ---
 
-## 15.1 Design Principles Review and Selection Guide
+## 17.1 Design Principles Review and Selection Guide
 
 ### Five Design Principles in Practice
 
@@ -106,6 +106,39 @@ If your task meets any of the following conditions, you should consider the Agen
 
 > **Decision rule of thumb:** If your system only needs the LLM to perform "input -> output" transformations (such as translation, summarization, classification), use a simple API call. If your system needs the LLM to perform an "observe -> think -> act -> observe again" loop, use an Agent Harness.
 
+### Minimal Essential Components: From 500K Lines to 7 Cores
+
+Claude Code has 500K lines of code, but the **essential complexity** of building a functional Coding Agent requires only 7 components. Understanding this minimal set helps you distinguish what must be implemented at the core versus what's additional complexity driven by production requirements.
+
+```mermaid
+graph TD
+    subgraph minimal["Minimal Coding Agent"]
+        A["1. Prompt Orchestration"] --> B["3. Agent Loop"]
+        C["2. Tool Registry"] --> B
+        B --> D["4. File Operations"]
+        B --> E["5. Shell Execution"]
+        B --> F["6. Edit Strategy"]
+        B --> G["7. CLI UX"]
+    end
+
+    classDef core fill:#e8f4f8,stroke:#2196F3,stroke-width:2px,color:#1565C0
+    class A,B,C,D,E,F,G core
+```
+
+| # | Component | Essential Problem | Claude Code Implementation | Minimal Implementation |
+|---|-----------|------------------|---------------------------|----------------------|
+| 1 | Prompt Orchestration | Model doesn't know who it is or what it can do | `context.ts` + `systemPrompt.ts` (~1000 lines) | `prompt.ts` (~65 lines) |
+| 2 | Tool Registry | Model doesn't know what tools are available | `Tool.ts` + 66 tool definitions | `tools.ts` (~850 lines, 13 tools) |
+| 3 | Agent Loop | Call model → execute tools → repeat | `query.ts` + `QueryEngine.ts` (~2500 lines) | `agent.ts` (~500 lines) |
+| 4 | File Operations | Read/write code files | FileReadTool + FileWriteTool | Built into tools.ts |
+| 5 | Shell Execution | Run tests, install dependencies | BashTool (~2000 lines, with AST analysis) | `execFileSync` (~30 lines) |
+| 6 | Edit Strategy | Safely modify code | FileEditTool (search-and-replace) | edit_file tool |
+| 7 | CLI UX | Human interacts with Agent | `cli.tsx` (React/Ink, ~3000 lines) | `cli.ts` (~200 lines) |
+
+**Core insight:** Components 1-3 are the **skeleton** (any Agent must have them), components 4-6 are **capabilities** (giving the Agent programming abilities), component 7 is the **interface** (making it usable by humans). Much of Claude Code's 500K lines comes from production requirements -- OAuth, MCP protocol integration, Vim mode, OSC 8 hyperlinks, multi-platform adaptation. These are **accidental complexity**, not essential requirements for building an Agent.
+
+> **Practical advice:** Start with these 7 minimal components, verify the core loop works, then add production-grade features incrementally. Don't try to replicate all of Claude Code's functionality from the start -- that's the result of a 50-person team working for years.
+
 ### Runtime Selection: Bun vs. Node.js vs. Python
 
 Claude Code chose Bun as its runtime, primarily for three reasons:
@@ -134,7 +167,7 @@ If your project primarily runs server-side and you already have Node.js infrastr
 
 ---
 
-## 15.2 Core Component Implementation Roadmap
+## 17.2 Core Component Implementation Roadmap
 
 The call relationships and data flow between the six core components of an Agent Harness are shown below:
 
@@ -729,7 +762,7 @@ export class HookRunner {
 
 ---
 
-## 15.3 Architectural Lessons from Claude Code
+## 17.3 Architectural Lessons from Claude Code
 
 ### Breaking Circular Dependencies
 
@@ -902,7 +935,7 @@ Observability for a production-grade Agent Harness goes beyond "logging" -- it's
 
 ---
 
-## 15.4 Production Considerations
+## 17.4 Production Considerations
 
 ### Telemetry and Observability
 
@@ -1054,7 +1087,7 @@ flowchart TD
 
 ---
 
-## 15.5 The Future of Agent Harnesses
+## 17.5 The Future of Agent Harnesses
 
 ### Multimodal Interaction
 

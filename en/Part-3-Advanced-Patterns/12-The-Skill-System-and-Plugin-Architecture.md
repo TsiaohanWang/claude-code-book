@@ -1,4 +1,4 @@
-# Chapter 11: The Skill System and Plugin Architecture
+# Chapter 12: The Skill System and Plugin Architecture
 
 > "Good architecture makes adding features easy; great architecture makes removing features just as easy."
 > -- Adapted from *Clean Architecture*
@@ -12,7 +12,7 @@
 
 ---
 
-## 11.1 Skill System Architecture
+## 12.1 Skill System Architecture
 
 Claude Code's skill system is a multi-layered extension mechanism. It allows users to define reusable prompt templates through Markdown files, and allows developers to register compile-time built-in skills through TypeScript code. The design goal of the entire system is: **zero-configuration usability, configurable power**.
 
@@ -145,7 +145,7 @@ The deduplication strategy uses `realpath` to resolve symbolic links and obtain 
 
 ---
 
-## 11.2 Skill Definition Format
+## 12.2 Skill Definition Format
 
 ### 11.2.1 Markdown Frontmatter Configuration
 
@@ -297,7 +297,7 @@ graph LR
 
 ---
 
-## 11.3 Skill Loading Paths
+## 12.3 Skill Loading Paths
 
 ### 11.3.1 Tiered Loading Strategy
 
@@ -408,7 +408,7 @@ flowchart TD
 
 ---
 
-## 11.4 Plugin System
+## 12.4 Plugin System
 
 ### 11.4.1 Plugin Directory Structure
 
@@ -510,7 +510,7 @@ Dependency relationships and cycle breaking:
 
 ---
 
-## 11.5 Complete Tutorial for Creating Custom Skills
+## 12.5 Complete Tutorial for Creating Custom Skills
 
 This section walks through a complete example, demonstrating the entire process of creating a practical skill from scratch.
 

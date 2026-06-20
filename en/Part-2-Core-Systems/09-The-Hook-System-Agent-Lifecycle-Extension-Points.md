@@ -1,4 +1,4 @@
-# Chapter 8: The Hook System -- Agent's Lifecycle Extension Points
+# Chapter 9: The Hook System -- Agent's Lifecycle Extension Points
 
 > **Learning Objectives:** After reading this chapter, you will be able to:
 >
@@ -18,7 +18,7 @@ Using a biological analogy to understand: the human body has not just bones (arc
 
 From an engineering perspective, the hook system follows the classic **Observer Pattern** combined with **Chain of Responsibility Pattern**. Each lifecycle event is a "signal", multiple hooks can listen to the same signal, processing in priority order, and any hook can choose to "block signal propagation". This design enables Claude Code's core execution engine to operate without knowledge of extension logic, achieving complete decoupling between the core system and user-defined logic.
 
-## 8.1 Hook Types and Execution Model
+## 9.1 Hook Types and Execution Model
 
 Hooks are user-customizable extension points in Claude Code's lifecycle. Through hooks, users can inject custom logic at critical nodes without modifying Claude Code source code -- from approving tool calls, modifying tool inputs, to intercepting user requests, injecting additional context.
 
@@ -208,7 +208,7 @@ Async hook implementation is completed in background execution functions. Async-
 
 ---
 
-## 8.2 Core Lifecycle Events
+## 9.2 Core Lifecycle Events
 
 The SDK core types module defines the complete `HOOK_EVENTS` array with 26 lifecycle events, covering all critical nodes including tool invocation, user interaction, session management, sub-agents, compression, permissions, configuration changes, etc.
 
@@ -528,7 +528,7 @@ The table below summarizes all 26 events' classification, blockability, and typi
 
 ---
 
-## 8.3 Hook Response Protocol
+## 9.3 Hook Response Protocol
 
 Hook output is not just a piece of stdout text, but a structured JSON response protocol. The output parsing function in hook execution module is responsible for parsing and processing this protocol. Understanding this protocol is the foundation for designing advanced hooks.
 
@@ -652,7 +652,7 @@ flowchart TD
 
 ---
 
-## 8.4 Hook Configuration and Security
+## 9.4 Hook Configuration and Security
 
 ### Configuration Validation
 
@@ -845,7 +845,7 @@ In parallel workflows, N Agents might register hooks in the same synchronous clo
 
 ---
 
-## 8.5 Hook Best Practices and Anti-patterns
+## 9.5 Hook Best Practices and Anti-patterns
 
 ### Best Practices Checklist
 

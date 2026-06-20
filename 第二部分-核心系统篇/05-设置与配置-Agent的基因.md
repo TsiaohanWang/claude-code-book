@@ -323,7 +323,7 @@ graph TD
 
 > 在安全敏感的检查中，系统只读取信任级别 >= 3 星的配置源。这个原则贯穿了整个配置系统的安全设计。
 
-> **交叉引用提示：** 本章讨论的 `projectSettings` 排除机制与第8章（钩子系统）的安全模型紧密相关。hooks 的加载同样遵循这一信任模型——当 `allowManagedHooksOnly` 启用时，来自 projectSettings 的 hooks 被完全屏蔽。
+> **交叉引用提示：** 本章讨论的 `projectSettings` 排除机制与第 9 章（钩子系统）的安全模型紧密相关。hooks 的加载同样遵循这一信任模型——当 `allowManagedHooksOnly` 启用时，来自 projectSettings 的 hooks 被完全屏蔽。
 
 ## 5.3 功能开关系统
 
@@ -535,7 +535,7 @@ const setState = useSetAppState();
 2. 使用 `useSetAppState()` 而非 `useAppState(s => s.setState)`——前者不订阅任何状态
 3. 避免在 selector 中创建新对象——`useAppState(s => ({ a: s.a, b: s.b }))` 每次调用都会返回新引用，导致无限重渲染。应该分别订阅或使用浅比较
 
-> **交叉引用提示：** AppState 中的 `mcp.*` 字段与第9章（MCP 工具系统）直接相关；`toolPermissionContext` 与权限系统相关；`speculation` 状态机与推测执行架构相关。理解 AppState 的结构是理解各子系统如何协作的关键。
+> **交叉引用提示：** AppState 中的 `mcp.*` 字段与第 10 章（MCP 工具系统）直接相关；`toolPermissionContext` 与权限系统相关；`speculation` 状态机与推测执行架构相关。理解 AppState 的结构是理解各子系统如何协作的关键。
 
 ---
 

@@ -1,4 +1,4 @@
-# 第15章：构建你自己的 Agent Harness
+# 第 17 章：构建你自己的 Agent Harness
 
 > "The rules of thinking are lengthy and fortuitous. They require plenty of thinking of most long duration and deep meditation for a wizard to wrap one's noggin around."
 > -- Claude Code 中的注释
@@ -7,7 +7,7 @@
 
 ---
 
-## 15.1 设计原则回顾与选型指南
+## 17.1 设计原则回顾与选型指南
 
 ### 五大设计原则在实际项目中的应用
 
@@ -106,6 +106,39 @@ flowchart TD
 
 > **决策经验法则：** 如果你的系统只需要 LLM 做"输入 -> 输出"的转换（如翻译、摘要、分类），使用简单的 API 调用。如果你的系统需要 LLM 做"观察 -> 思考 -> 行动 -> 再观察"的循环，使用 Agent Harness。
 
+### 最小必要组件：从 50 万行到 7 个核心
+
+Claude Code 有 50 万行代码，但构建一个功能完整的 Coding Agent 的**本质复杂性**只需要 7 个组件。理解这个最小集合，能帮你区分哪些是必须实现的核心、哪些是生产环境驱动的附加复杂性。
+
+```mermaid
+graph TD
+    subgraph minimal["最小 Coding Agent"]
+        A["1. 提示词编排<br/>Prompt Orchestration"] --> B["3. Agent 循环<br/>Agent Loop"]
+        C["2. 工具注册表<br/>Tool Registry"] --> B
+        B --> D["4. 文件操作<br/>File Operations"]
+        B --> E["5. Shell 执行<br/>Shell Execution"]
+        B --> F["6. 编辑策略<br/>Edit Strategy"]
+        B --> G["7. CLI 交互<br/>CLI UX"]
+    end
+
+    classDef core fill:#e8f4f8,stroke:#2196F3,stroke-width:2px,color:#1565C0
+    class A,B,C,D,E,F,G core
+```
+
+| # | 组件 | 本质问题 | Claude Code 实现 | 最小实现 |
+|---|------|---------|-----------------|---------|
+| 1 | 提示词编排 | 模型不知道自己是谁、能做什么 | `context.ts` + `systemPrompt.ts` (~1000 行) | `prompt.ts` (~65 行) |
+| 2 | 工具注册表 | 模型不知道有哪些工具可用 | `Tool.ts` + 66 个工具定义 | `tools.ts` (~850 行，13 个工具) |
+| 3 | Agent 循环 | 调用模型 → 执行工具 → 重复 | `query.ts` + `QueryEngine.ts` (~2500 行) | `agent.ts` (~500 行) |
+| 4 | 文件操作 | 读写代码文件 | FileReadTool + FileWriteTool | 内置于 tools.ts |
+| 5 | Shell 执行 | 运行测试、安装依赖 | BashTool (~2000 行，含 AST 分析) | `execFileSync` (~30 行) |
+| 6 | 编辑策略 | 安全地修改代码 | FileEditTool (search-and-replace) | edit_file 工具 |
+| 7 | CLI 交互 | 人类与 Agent 对话 | `cli.tsx` (React/Ink, ~3000 行) | `cli.ts` (~200 行) |
+
+**核心洞察：** 组件 1-3 是**骨架**（任何 Agent 都必须有），组件 4-6 是**能力**（赋予 Agent 编程能力），组件 7 是**接口**（让人能用）。Claude Code 的 50 万行代码中，大量复杂性来自生产环境需求——OAuth 认证、MCP 协议集成、Vim 模式、OSC 8 超链接、多平台适配等。这些都是**偶然复杂性**，不是构建 Agent 的本质要求。
+
+> **实践建议：** 从这 7 个最小组件开始构建，验证核心循环工作后再逐步添加生产级特性。不要试图一开始就复制 Claude Code 的全部功能——那是 50 人团队数年工作的成果。
+
 ### 运行时选择：Bun vs. Node.js vs. Python
 
 Claude Code 选择 Bun 作为运行时，主要出于三个考量：
@@ -134,7 +167,7 @@ Claude Code 选择 Bun 作为运行时，主要出于三个考量：
 
 ---
 
-## 15.2 核心组件实现路线图
+## 17.2 核心组件实现路线图
 
 Agent Harness 的六大核心组件之间的调用关系和数据流如下所示：
 
@@ -574,7 +607,7 @@ export class ContextManager {
 
 关键洞察：**信息损失是相对的。** Snip 丢弃了完整的工具结果，但保留了对话结构。摘要压缩保留了语义信息，但丢失了原始措辞。选择哪种策略取决于对话中什么信息最重要 -- 如果用户在调试一个复杂 bug，工具结果（如日志输出）可能是最不能丢的；如果用户在进行代码重构，整体的设计决策比中间步骤更重要。
 
-> **交叉引用：** Claude Code 的四级压缩策略在第 7 章"上下文管理 -- Agent 的工作记忆"中有完整分析。本章的两级策略是简化版本。
+> **交叉引用：** Claude Code 的五级压缩策略在第 7 章"上下文管理 -- Agent 的工作记忆"中有完整分析。本章的两级策略是简化版本。
 
 ### Step 5：记忆系统
 
@@ -711,11 +744,11 @@ export class HookRunner {
 
 4. **审计追踪**：记录每个钩子的执行时间、返回码和输出，用于调试和合规审计。
 
-> **交叉引用：** 钩子系统的完整设计在第 8 章"钩子系统 -- Agent 的生命周期扩展点"中有详细分析。
+> **交叉引用：** 钩子系统的完整设计在第 9 章"钩子系统 -- Agent 的生命周期扩展点"中有详细分析。
 
 ---
 
-## 15.3 从 Claude Code 学到的架构教训
+## 17.3 从 Claude Code 学到的架构教训
 
 ### 循环依赖的打破策略
 
@@ -886,7 +919,7 @@ stateDiagram-v2
 
 ---
 
-## 15.4 生产化考量
+## 17.4 生产化考量
 
 ### 遥测与可观测性
 
@@ -1038,7 +1071,7 @@ flowchart TD
 
 ---
 
-## 15.5 Agent Harness 的未来
+## 17.5 Agent Harness 的未来
 
 ### 多模态交互
 
@@ -1106,7 +1139,7 @@ Model Context Protocol (MCP) 正在成为工具调用的事实标准。Claude Co
 
 **MCP 对 Agent Harness 设计的影响：** MCP 的标准化意味着未来 Agent Harness 的工具系统将不再是封闭的。工具可以来自任何 MCP 兼容的服务器，Agent 不需要预先知道所有可用工具。这对权限系统提出了新的挑战 -- 如何为一个运行时才发现的工具设置权限规则？可能的解决方案包括：基于工具能力描述的自动权限推断、MCP 服务器级别的信任分级、以及更细粒度的沙箱隔离。
 
-> **交叉引用：** MCP 集成的详细架构在第 12 章"MCP 集成与外部协议"中有完整分析。
+> **交叉引用：** MCP 集成的详细架构在第 13 章"MCP 集成与外部协议"中有完整分析。
 
 ### 未来架构的前瞻性分析
 

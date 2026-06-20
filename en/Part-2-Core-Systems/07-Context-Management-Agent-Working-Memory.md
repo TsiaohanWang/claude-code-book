@@ -109,11 +109,86 @@ On success, the failure counter resets to zero; on failure, the counter incremen
 
 > **Anti-Pattern Warning:** If you are building your own Agent system, do not ignore circuit breakers. A system without circuit breakers will fall into a "compression failure -> retry -> fail again" death spiral when the API is unstable, wasting resources and potentially further degrading the user experience due to increased latency.
 
-> **Cross-Reference:** The circuit breaker pattern is also discussed as a key design pattern in Chapter 15 on building your own Agent Harness. Similar state protection mechanisms also appear in the conversation loop in Chapter 2 (the `max_output_tokens_recovery` path).
+> **Cross-Reference:** The circuit breaker pattern is also discussed as a key design pattern in Chapter 17 on building your own Agent Harness. Similar state protection mechanisms also appear in the conversation loop in Chapter 2 (the `max_output_tokens_recovery` path).
 
 ---
 
-## 7.2 The Four-Level Compression Strategy
+## 7.2 API Request Anatomy and Cache Breakpoints
+
+Before diving into compression strategies, understanding the complete structure of an API request is crucial — because every compression design decision is constrained by the caching mechanism.
+
+### The Three Pillars of an API Request
+
+Each time Claude API is called, the model starts from scratch — it has no persistent memory across requests and can only see what's carried in the current request. Claude Code assembles all the information the model needs into a complete request with three top-level fields:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  system — System prompt array (multiple TextBlocks)          │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │ [0] Attribution Header                       uncached  │  │
+│  │ [1] CLI prefix (interactive / -p mode)       uncached  │  │
+│  │ ─── Static content ───────────────────── 🔒 global ── │  │
+│  │ [2] Core instructions + tool descriptions + safety     │  │
+│  │     (identical for all users, all sessions)            │  │
+│  │ ─── __SYSTEM_PROMPT_DYNAMIC_BOUNDARY__ ────────────── │  │
+│  │ ─── Dynamic content ───────────────────── uncached ── │  │
+│  │ [3] Output style, language prefs, MCP instructions     │  │
+│  │     (varies by user/session)                           │  │
+│  └────────────────────────────────────────────────────────┘  │
+│                                                               │
+│  tools — Tool schema array                                    │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │ Built-in tools (Read, Edit, Bash, Grep, Write, Glob)   │  │
+│  │ MCP tools (user-installed, may be deferred_loading)    │  │
+│  │ Last tool ← marked cache_control as cache breakpoint   │  │
+│  │ ── After breakpoint ──                                  │  │
+│  │ Server tools (advisor etc., toggle doesn't affect cache)│  │
+│  └────────────────────────────────────────────────────────┘  │
+│                                                               │
+│  messages — Message array                                     │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │ [User]  <system-reminder>                               │  │
+│  │           CLAUDE.md + current date (memoized per session)│  │
+│  │         </system-reminder>                   (isMeta)   │  │
+│  │ [User]  User's first message                            │  │
+│  │ [Asst]  Model response (may contain tool_use blocks)    │  │
+│  │ [User]  tool_result                                     │  │
+│  │ [User]  Attachment messages (memories, skills, MCP)     │  │
+│  │ [Asst]  Model's second turn                             │  │
+│  │ ... (messages grow until compression intervenes)         │  │
+│  └────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Cache Breakpoint Mechanism
+
+The Claude API supports **Prefix Caching** (KV Cache): the server remembers previously processed prefixes, so subsequent requests only need to process new additions, dramatically reducing latency and cost. But prefix caching has a brutal constraint: **the prefix must be byte-identical to hit the cache**. A single byte change — even reordering a tool — invalidates the entire prefix cache.
+
+To maximize cache hit rates, Claude Code sets cache breakpoints at three key positions:
+
+| Breakpoint | Cache Scope | Purpose |
+|-----------|-------------|---------|
+| System prompt static/dynamic boundary | `global` (shared across all users) | Core instructions shared globally |
+| Last tool in schema array | `org` (shared within organization) | MCP tool changes don't affect prior cache |
+| CLAUDE.md + date (messages[0]) | Session-level | Project instructions computed once per session |
+
+### Component Change Frequency
+
+| Component | Request Location | Change Frequency | Notes |
+|-----------|----------------|-----------------|-------|
+| Core system instructions | `system` (before boundary) | **Never** | Global cache, shared worldwide |
+| Dynamic system instructions | `system` (after boundary) | **Never** | Determined at session start |
+| Tool schema | `tools[]` | **Rarely** | Deferred loading minimizes changes |
+| CLAUDE.md + date | `messages[0]` | **Never** | Wrapped in system-reminder |
+| Memory files | `messages` (attachments) | **On demand** | Injected when relevant, deduplicated |
+| Skills / MCP instructions | `messages` (attachments) | **Incremental** | Only inject delta when list changes |
+| User messages + model replies | `messages` | **Every turn** | Compression controls growth rate |
+
+> **Key Design Insight:** Memories, skills, and MCP instructions are not in the system prompt — they're injected as `<system-reminder>` attachment messages in the message array. This allows them to be injected on-demand and incrementally (only when content changes), without breaking system prompt caching. This is why many seemingly "over-engineered" mechanisms are driven by cache stability.
+
+---
+
+## 7.3 The Five-Level Compression Strategy
 
 Claude Code's context management employs a four-level progressive compression strategy, escalating from low cost to high cost. Each level is activated only when the previous level is insufficient to free up space.
 
@@ -121,7 +196,7 @@ This design philosophy can be understood through an analogy: **compression strat
 
 ```mermaid
 graph LR
-    subgraph CompressionStrategy["Four-Level Compression Strategy (Increasing Cost ->)"]
+    subgraph CompressionStrategy["Five-Level Compression Strategy (Increasing Cost ->)"]
         direction LR
         L1["Level 1: Snip<br/>───────<br/>No LLM<br/>Token Clearance<br/>Cost ~ 0"]
         L2["Level 2: MicroCompact<br/>───────<br/>No LLM<br/>Time-Triggered<br/>Very Low Cost"]
@@ -241,7 +316,7 @@ Notably, the `buildPostCompactMessages` function ensures consistent output messa
 
 ---
 
-## 7.3 Compression Prompt Engineering
+## 7.4 Compression Prompt Engineering
 
 The quality of compression directly depends on prompt design. Claude Code's compression prompt engineering is a carefully designed system with multiple variants and strict output format constraints.
 
@@ -314,7 +389,7 @@ The presence of the boundary marker enables subsequent compression operations to
 
 ---
 
-## 7.4 Token Budget Tracking
+## 7.5 Token Budget Tracking
 
 Token management is not just about reactive compression triggering; it also includes proactive budget planning and early warning systems.
 
@@ -355,7 +430,7 @@ If the post-compression token count still exceeds the auto-compression threshold
 
 ---
 
-## 7.5 Context Management Strategies for Long Conversations
+## 7.6 Context Management Strategies for Long Conversations
 
 Having understood the compression mechanisms, let's look at how to optimize context management in practice.
 

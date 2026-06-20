@@ -1,4 +1,4 @@
-# Chapter 14: Plan Mode & Structured Workflows
+# Chapter 16: Plan Mode & Structured Workflows
 
 > "Plans are nothing; planning is everything." -- Dwight D. Eisenhower
 
@@ -6,7 +6,7 @@
 
 ---
 
-## 14.1 Plan Mode Architecture
+## 16.1 Plan Mode Architecture
 
 ### 14.1.1 Design Philosophy: Plan Before Execute
 
@@ -206,7 +206,7 @@ After user approves plan, ExitPlanMode restores original mode, Agent enters exec
 
 ---
 
-## 14.2 Plan Verification Mechanism
+## 16.2 Plan Verification Mechanism
 
 ### 14.2.1 Verification Agent
 
@@ -313,7 +313,7 @@ Three sources' priority design reflects "reliability first" principle: tool_use 
 
 ---
 
-## 14.3 Workflow System
+## 16.3 Workflow System
 
 ### 14.3.1 WorkflowTool and Skill System
 
@@ -420,7 +420,7 @@ Fork Agent's state isolation strategy can be compared to a "sandbox": sub-agent 
 
 ---
 
-## 14.4 Scheduling System
+## 16.4 Scheduling System
 
 ### 14.4.1 ScheduleCronTool: Local Scheduled Tasks
 
@@ -659,7 +659,7 @@ Synchronously wait for scheduled task results in main conversation (via Sleep + 
 
 ---
 
-## 14.5 Background Tasks and Active Mode
+## 16.5 Background Tasks and Active Mode
 
 ### 14.5.1 SleepTool
 

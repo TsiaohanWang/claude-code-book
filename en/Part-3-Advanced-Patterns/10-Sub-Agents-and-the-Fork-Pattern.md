@@ -1,4 +1,4 @@
-# Chapter 9: Sub-Agents and the Fork Pattern
+# Chapter 10: Sub-Agents and the Fork Pattern
 
 > **Learning Objectives:**
 > - Deeply understand the spawning mechanism and full lifecycle management of sub-agents
@@ -10,7 +10,7 @@ The true power of Claude Code lies not in its single-turn conversational ability
 
 ---
 
-## 9.1 AgentTool Architecture
+## 10.1 AgentTool Architecture
 
 ### Directory Structure and Module Responsibilities
 
@@ -111,7 +111,7 @@ This means that policy-level custom agents can override built-in agents with the
 
 ---
 
-## 9.2 Built-in Agents
+## 10.2 Built-in Agents
 
 Built-in agents are returned as a list of currently available agents by the `getBuiltInAgents()` function in the registration module. Each agent is carefully designed as an expert in a specific domain. Together, they cover the four most common work patterns in software engineering: exploration, planning, execution, and verification.
 
@@ -219,7 +219,7 @@ flowchart TD
 
 ---
 
-## 9.3 Fork Pattern: Cache-Safe Parallel Execution
+## 10.3 Fork Pattern: Cache-Safe Parallel Execution
 
 The Fork pattern is one of the most sophisticated architectural innovations in Claude Code. It allows the main agent to "fork" the complete context at a given moment to multiple parallel sub-tasks while leveraging the Anthropic API's prompt cache mechanism to avoid retransmitting large numbers of tokens.
 
@@ -336,7 +336,7 @@ The sub-task directive generation function produces directives containing strict
 
 ---
 
-## 9.4 Custom Agents
+## 10.4 Custom Agents
 
 ### Definition Files in the .claude/agents/ Directory
 
@@ -511,7 +511,7 @@ Report format:
 
 ---
 
-## 9.5 Agent Tool Isolation
+## 10.5 Agent Tool Isolation
 
 ### Global Disallow List
 
@@ -559,7 +559,7 @@ The tool filtering function is the final arbiter, implementing a three-layer fil
 
 ---
 
-## 9.6 Sub-Agent Lifecycle Management
+## 10.6 Sub-Agent Lifecycle Management
 
 Sub-agents go through a complete lifecycle from creation to destruction. Understanding this lifecycle is critical for designing efficient multi-agent collaboration workflows.
 

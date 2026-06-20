@@ -4,7 +4,7 @@
 
 > - Understand the design rationale and engineering trade-offs of Claude Code's four-stage permission checking process
 > - Master the design philosophy and immutable data pattern of the permission context
-> - Analyze the behavioral differences and applicable scenarios of the five permission modes
+> - Analyze the behavioral differences and applicable scenarios of the five external permission modes
 > - Understand the implementation mechanism of BashTool's fine-grained permission control
 > - Master best practices for enterprise-grade security configuration
 

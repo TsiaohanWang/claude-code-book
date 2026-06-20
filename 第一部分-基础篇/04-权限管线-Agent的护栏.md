@@ -2,9 +2,10 @@
 
 > 学习目标：阅读本章后，你将能够：
 
-> - 理解 Claude Code 四阶段权限检查流程的设计原理和工程权衡
+> - 理解 Claude Code 七层纵深防御架构的整体设计
+> - 掌握工具级四阶段权限检查流程的设计原理和工程权衡
 > - 掌握权限上下文的设计哲学和不可变数据模式
-> - 分析五种权限模式的行为差异和适用场景
+> - 分析五种外部权限模式的行为差异和适用场景
 > - 理解 BashTool 精细权限控制的实现机制
 > - 掌握企业级安全配置的最佳实践
 
@@ -14,9 +15,42 @@
 
 本章将从架构设计出发，深入拆解权限管线的每一个阶段，理解其设计决策，并通过实战练习掌握配置方法。
 
-## 4.1 权限管线的四个阶段
+## 4.1 安全架构全景：七层纵深防御
 
-Claude Code 的权限检查并非单一函数的布尔判断，而是一条由四个阶段组成的管线（Pipeline）。每个阶段都有自己的职责和短路逻辑：只要前一阶段做出终局决定，后续阶段便不再执行。
+Claude Code 的安全系统不是单一的权限检查，而是**七层纵深防御**（Defense in Depth）。每一层独立运作，即使某一层被绕过，下一层仍可拦截：
+
+```mermaid
+flowchart TD
+    Request["工具调用请求"] --> L1["Layer 1: 工作区信任确认<br/>首次启动时的信任对话框"]
+    L1 --> L2["Layer 2: 权限模式<br/>default / acceptEdits / plan<br/>/ bypassPermissions / dontAsk"]
+    L2 --> L3["Layer 3: 权限规则匹配<br/>allow / deny / ask 列表<br/>支持通配符模式"]
+    L3 --> L4["Layer 4: Bash 多层安全<br/>AST 解析 + 23 项静态检查"]
+    L4 --> L5["Layer 5: 工具级安全<br/>validateInput / checkPermissions<br/>危险文件保护"]
+    L5 --> L6["Layer 6: 沙箱与隔离<br/>进程隔离 + Git Worktree"]
+    L6 --> L7["Layer 7: 用户确认<br/>交互式对话框<br/>ML 分类器竞速 · Hook 覆盖"]
+    L7 --> Exec["执行工具"]
+
+    classDef layer fill:#e8f4f8,stroke:#2196F3,stroke-width:1px,color:#1565C0
+    class L1,L2,L3,L4,L5,L6,L7 layer
+```
+
+| 层级 | 名称 | 作用 | 关键机制 |
+|------|------|------|---------|
+| 1 | 工作区信任确认 | 防止恶意仓库预埋 Hook 脚本 | 不信任则禁用所有项目级配置 |
+| 2 | 权限模式 | 全局策略开关 | 5 种外部模式 + 2 种内部模式 |
+| 3 | 权限规则匹配 | 精确控制特定工具/命令 | deny > ask > allow 优先级铁律 |
+| 4 | Bash 多层安全 | 最大攻击面的专项防护 | tree-sitter AST + 23 项静态检查 |
+| 5 | 工具级安全 | 每个工具的安全属性声明 | validateInput → checkPermissions |
+| 6 | 沙箱与隔离 | 操作系统级进程隔离 | macOS Seatbelt / Linux 命名空间 |
+| 7 | 用户确认 | 最终人类决策权 | Hook + ML 分类器 + 用户三者竞速 |
+
+> **为什么不用一个统一的权限检查代替 7 层？** 因为纵深防御的核心假设是"每一层都可能被绕过"。如果只有工具级检查，一个巧妙的命令注入就可能绕过全部安全机制。7 层架构中，即使 AST 语义分析被绕过，路径约束和用户确认仍然可以拦截。
+
+本章重点分析 **Layer 5（工具级四阶段管线）** 和 **Layer 3（权限规则匹配）**，因为它们是日常使用中最常接触的安全机制。其他层级在相关章节中会有补充说明。
+
+## 4.2 工具级权限管线的四个阶段
+
+Claude Code 的工具级权限检查是一条由四个阶段组成的管线（Pipeline）。每个阶段都有自己的职责和短路逻辑：只要前一阶段做出终局决定，后续阶段便不再执行。
 
 这四个阶段可以用一张流程图来直观展示：
 
@@ -168,7 +202,7 @@ sequenceDiagram
 
 > **最佳实践：** 在企业环境中，如果你希望减少用户频繁看到权限提示的干扰，有三种策略可以组合使用：(1) 在项目配置中预设 allow 规则覆盖常用操作；(2) 使用 auto 模式让分类器自动处理常见请求；(3) 配置 Hook 脚本实现自定义的自动审批逻辑。三种策略可以叠加使用，覆盖从简单到复杂的所有场景。
 
-## 4.2 PermissionContext 的设计
+## 4.3 PermissionContext 的设计
 
 ### 4.2.1 ToolPermissionContext 类型结构
 
@@ -204,36 +238,47 @@ sequenceDiagram
 
 这个设计可以用一个现实世界的类比来理解：想象一张"单程机票"——一旦被某人兑换（claim），其他人就无法再使用同一张机票。不需要锁、不需要等待、不需要协调——只需要一个简单的"已兑换"标志。ResolveOnce 的 `claim()` 方法就是这张机票的兑换操作。
 
-## 4.3 权限模式谱系
+## 4.4 权限模式谱系
 
-Claude Code 定义了五种内部权限模式，它们构成了一个从严格到宽松的谱系。理解这个谱系对于选择合适的权限配置至关重要。
+Claude Code 定义了五种外部权限模式和两种内部模式，构成了一个从严格到宽松的谱系。
 
 ```mermaid
 flowchart LR
     subgraph spectrum["严格 ←────────────────────────────→ 宽松"]
         direction LR
-        A["default<br/>逐次确认<br/>每次工具调用<br/>都需用户确认"]
-        B["plan<br/>只读为主<br/>写入工具被 deny<br/>只读放行"]
-        C["auto<br/>AI分类器<br/>自动审批<br/>分类器替代人工审批"]
-        D["bypassPermissions<br/>完全跳过<br/>除 deny 规则和<br/>safetyCheck 外全部自动放行"]
+        A["default<br/>逐次确认"]
+        B["plan<br/>只读为主"]
+        C["acceptEdits<br/>自动批准编辑"]
+        D["dontAsk<br/>无规则则拒绝"]
+        E["bypassPermissions<br/>全部自动批准"]
     end
 
-    A --> B --> C --> D
-
-    E["bubble（内部模式）<br/>子智能体权限冒泡回主智能体"]
+    F["auto（内部）<br/>ML 分类器自动决策"]
+    G["bubble（内部）<br/>协调器专用"]
 
     classDef strict fill:#fef2f2,stroke:#ef4444,stroke-width:2px,color:#991b1b
     classDef moderate fill:#fef9f0,stroke:#f59e0b,stroke-width:2px,color:#92400e
     classDef loose fill:#f0fdf4,stroke:#22c55e,stroke-width:2px,color:#166534
     classDef internal fill:#f5f3ff,stroke:#8b5cf6,stroke-width:2px,color:#5b21b6
     class A strict
-    class B moderate
-    class C moderate
-    class D loose
-    class E internal
+    class B,C,D moderate
+    class E loose
+    class F,G internal
 ```
 
-### 4.3.1 default 模式：逐次确认
+| 模式 | 行为 | 适用场景 |
+|------|------|---------|
+| `default` | 无匹配规则时交互确认 | 日常使用 |
+| `plan` | 执行前暂停审查，写入工具被 deny | 敏感操作审计 |
+| `acceptEdits` | 自动批准 Edit/Write/NotebookEdit | 信任度高的项目 |
+| `dontAsk` | 无匹配规则时自动拒绝 | CI/CD 环境 |
+| `bypassPermissions` | 全部自动批准（deny 规则仍生效） | 完全信任（危险） |
+| `auto`（内部） | ML 分类器自动决策 | 内部使用 |
+| `bubble`（内部） | 子智能体权限冒泡回主智能体 | 多 Agent 协调 |
+
+> **安全底线：** 即使在 `bypassPermissions` 模式下，deny 规则和危险文件保护（如 `.git/`、`.bashrc`）仍然是 bypass-immune 的——这些安全检查不会被任何权限模式绕过。
+
+### 4.4.1 default 模式：逐次确认
 
 `default` 模式是最保守的模式。除了被明确 allow 规则放行的工具外，每次工具调用都需要用户确认。这是普通用户启动 Claude Code 时的默认体验。在权限模式配置中，default 模式体现了其保守基调，UI 标识上无特殊标记，暗示这是"标准状态"。
 
@@ -241,7 +286,7 @@ flowchart LR
 
 **用户体验权衡：** 最安全但最繁琐。对于一个大型重构任务，Agent 可能需要执行数十次文件编辑和命令运行，每次确认都会打断开发者的思路。
 
-### 4.3.2 plan 模式：只读为主
+### 4.4.2 plan 模式：只读为主
 
 `plan` 模式将 Agent 限制在只读操作范围内。它的 UI 标识是一个暂停图标。
 
@@ -251,7 +296,7 @@ flowchart LR
 
 **设计哲学：** plan 模式体现了"先理解后行动"的工作流——Agent 先以只读模式理解代码库，给出修改方案，获得用户认可后再切换到执行模式。这种两阶段工作流在处理大型代码库时尤其有效，可以避免 Agent 在没有充分理解的情况下做出不恰当的修改。
 
-### 4.3.3 auto 模式：自动审批（带分类器）
+### 4.4.3 auto 模式：自动审批（带分类器）
 
 `auto` 模式是 Claude Code 最精巧的模式之一。它使用 AI 分类器（称为 "YOLO classifier"）来代替人工审批。当权限管线到达 `ask` 状态且模式为 `auto` 时，系统会调用分类器进行 AI 判断，将工具名称和输入格式化为分类器可理解的格式，并发送对话上下文和工具列表供分类器参考。
 
@@ -269,7 +314,7 @@ auto 模式的一个重要安全设计是：某些安全检查类型的决策（
 
 > **反模式警告：** auto 模式不适合以下场景：(1) 涉及生产环境部署的操作；(2) 涉及敏感数据（密钥、凭证）的操作；(3) 不可逆操作（如删除数据库）。在这些场景下，即使用户信任分类器的判断，也应该使用 default 模式或配置显式的 deny 规则。
 
-### 4.3.4 bypassPermissions 模式：完全跳过
+### 4.4.4 bypassPermissions 模式：完全跳过
 
 `bypassPermissions` 模式是权限系统的"关闭开关"。当激活时，除了被 deny 规则阻止和不可绕过的安全检查之外，所有工具调用都自动放行。判断是否应该绕过权限时会检查当前模式是否为 bypassPermissions，或者模式为 plan 但 bypass 标志可用。
 
@@ -285,7 +330,7 @@ auto 模式的一个重要安全设计是：某些安全检查类型的决策（
 
 > **企业级安全最佳实践：** 如果你的团队使用 bypass 模式，强烈建议：(1) 在容器或虚拟机中运行 Claude Code，确保文件系统隔离；(2) 配置显式的 deny 规则阻止危险操作（如 `Bash(rm -rf *)`、`Bash(npm publish)`）；(3) 使用 `--allowedTools` 参数限制可用工具范围；(4) 启用审计日志记录所有工具调用。
 
-### 4.3.5 bubble 模式：子智能体权限冒泡
+### 4.4.5 bubble 模式：子智能体权限冒泡
 
 `bubble` 模式是内部模式（不对外暴露），用于子智能体（subagent）场景。当主 Agent 生成子智能体时，子智能体的权限检查会"冒泡"回主 Agent 的权限上下文，确保子智能体不会获得超出主 Agent 的权限。
 
@@ -293,7 +338,7 @@ auto 模式的一个重要安全设计是：某些安全检查类型的决策（
 
 内部权限模式类型包含了所有模式（包括 auto 和 bubble），而外部可见性检查函数确保内部模式不会泄露到外部接口。这种内外有别的类型设计是"信息隐藏"原则的体现——外部用户不需要知道 bubble 模式的存在，它是内部实现细节。
 
-## 4.4 BashTool 的权限细节
+## 4.5 BashTool 的权限细节
 
 Bash 工具是权限系统中最复杂的工具，因为 shell 命令的组合性和表达力远超其他工具。一个简单的 `git` 命令可以是安全的（`git status`），也可以是危险的（`git push --force origin main`）。权限系统需要理解命令的语义，而不仅仅是匹配命令名。
 
@@ -345,7 +390,7 @@ Bash 工具有自己的分类器自动审批机制，与 auto 模式的 YOLO 分
 
 2 秒的超时选择是经过权衡的：太短（如 500ms）可能因为网络延迟导致分类器来不及响应，太长（如 10 秒）会让用户感到等待时间过长。2 秒是一个"甜蜜点"——对于简单的命令，分类器通常在 1 秒内就能响应；对于复杂的命令，2 秒的超时确保用户不会等待太久。
 
-## 4.5 权限更新与持久化
+## 4.6 权限更新与持久化
 
 ### 4.5.1 PermissionUpdate 模式
 

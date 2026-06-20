@@ -1,4 +1,4 @@
-# Chapter 13: Streaming Architecture & Performance Optimization
+# Chapter 15: Streaming Architecture & Performance Optimization
 
 > "Premature optimization is the root of all evil -- but latency is the root of all user complaints."
 > -- adapted from Donald Knuth
@@ -7,7 +7,7 @@
 
 ---
 
-## 13.1 Streaming API Interaction
+## 15.1 Streaming API Interaction
 
 ### 13.1.1 QueryEngine: The Manager of Query Lifecycle
 
@@ -125,7 +125,7 @@ The key insight of this data flow is: **streaming processing is not an optimizat
 
 ---
 
-## 13.2 Concurrency Control of StreamingToolExecutor
+## 15.2 Concurrency Control of StreamingToolExecutor
 
 ### 13.2.1 Design Philosophy: Execute on Arrival
 
@@ -275,7 +275,7 @@ This "selective cascading" strategy is a pragmatic approach: it doesn't pursue t
 
 ---
 
-## 13.3 Startup Performance Optimization
+## 15.3 Startup Performance Optimization
 
 Claude Code's startup time directly affects user experience. CLI tool psychology research shows that startup delays over 2 seconds make users feel the tool is "clunky", and over 5 seconds triggers "is it frozen?" anxiety. The system shortens the latency from command line input to first response through three optimization strategies: parallel prefetching, lazy loading, and lazy module evaluation.
 
@@ -367,7 +367,7 @@ If you're building your own CLI Agent tool, the following checklist can help you
 
 ---
 
-## 13.4 Token Cost Tracking
+## 15.4 Token Cost Tracking
 
 ### 13.4.1 Cost Calculation Engine
 
@@ -479,7 +479,7 @@ Note turns 5-6: A tool returned a huge file (63K cache creation tokens), causing
 
 ---
 
-## 13.5 Caching Optimization Strategies
+## 15.5 Caching Optimization Strategies
 
 ### 13.5.1 Three Dimensions of Prompt Cache Sharing
 

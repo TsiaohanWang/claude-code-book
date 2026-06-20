@@ -5,7 +5,7 @@
 
 **Learning Objectives:** After reading this chapter, you will be able to:
 
-- Master the design patterns of Claude Code's 45+ tools and understand the design philosophy of the five-element protocol
+- Master the design patterns of Claude Code's 66+ tools and understand the design philosophy of the five-element protocol
 - Understand the complete architecture of the tool definition protocol, registration mechanism, and orchestration engine
 - Analyze the scheduling principles and practical effects of concurrency partitioning strategies
 - Understand the elegant design of the StreamingToolExecutor four-stage state machine
@@ -13,7 +13,7 @@
 
 ---
 
-Maslow's quote could not be more fitting when applied to Agent tool systems. If an Agent only has a Bash tool, every task becomes a Shell command -- reading files with `cat`, searching code with `grep`, editing files with `sed`. This works, but it violates the engineering principle of "using the right tool for the right problem." Claude Code's tool system provides 45+ specialized tools, each optimized for a specific type of operation -- like equipping different professional tools for different tasks, rather than solving every problem with a single hammer.
+Maslow's quote could not be more fitting when applied to Agent tool systems. If an Agent only has a Bash tool, every task becomes a Shell command -- reading files with `cat`, searching code with `grep`, editing files with `sed`. This works, but it violates the engineering principle of "using the right tool for the right problem." Claude Code's tool system provides 66+ specialized tools, each optimized for a specific type of operation -- like equipping different professional tools for different tasks, rather than solving every problem with a single hammer.
 
 ## 3.1 The Tool Definition Protocol
 
@@ -204,8 +204,14 @@ These three tools constitute Claude Code's complete file operation capability se
 
 **FileEditTool** is responsible for precise file editing. It uses an `old_string -> new_string` exact replacement pattern rather than line number ranges, ensuring that edit operations remain correct even when the file changes. This choice deserves deeper analysis:
 
-- **Why not line numbers?** Line numbers are fragile -- if another tool (or the user) modifies the file between reading and editing, the line numbers may have shifted, causing edits to be applied to the wrong location.
+- **Why not line numbers?** Line numbers are fragile -- if another tool (or the user) modifies the file between reading and editing, the line numbers may have shifted, causing edits to be applied to the wrong location. More critically, when the model needs multiple edits to the same file in one turn, the first edit causes all subsequent line numbers to shift.
+- **Why not AST?** AST editing is theoretically elegant but practically infeasible -- Claude Code needs to support dozens of languages, maintaining an AST parser for each is prohibitively expensive. More critically: **files with syntax errors are precisely the files that most need editing**, but AST parsers refuse to parse when they encounter syntax errors.
+- **Why not unified diff?** LLMs perform poorly when generating strict formats (precise hunk headers, `+`/`-`/space prefixes). A single character deviation causes the entire patch to fail.
 - **Why exact string matching?** String matching is idempotent -- as long as the target string exists in the file, the edit can be correctly located. Even if the file has been partially modified, as long as the target fragment hasn't been touched, the edit is safe.
+
+**Anti-hallucination property:** FileEditTool's most underrated advantage is its anti-hallucination capability. Consider this scenario: the model "remembers" a `handleError()` function in the file, but it was actually renamed to `processError()` in a previous refactor. With search-and-replace, providing `old_string: "function handleError()"` fails directly ("String to replace not found in file"), and the model re-reads the file to discover the correct name. With full-file rewrite, the model might write a complete file containing `handleError()`, overwriting the correct `processError()` -- and this error is completely silent with no error reported.
+
+**Input preprocessing:** The model's edit input goes through preprocessing before validation: (1) trailing whitespace stripping (`.md` files are exempt, since Markdown uses trailing double-space for hard line breaks); (2) API desanitization -- the Claude API sanitizes certain XML tags to short forms (e.g., `<function_results>` → `<fnr>`), and preprocessing attempts to restore these tags to ensure matching succeeds.
 
 FileEditTool's `isDestructive` method determines whether an edit is a destructive operation based on the edit content (e.g., deleting a large amount of code). This context-aware destructiveness determination is more precise than a simple "write equals destructive" label.
 

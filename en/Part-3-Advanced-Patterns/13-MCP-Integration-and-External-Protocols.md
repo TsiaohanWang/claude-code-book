@@ -1,4 +1,4 @@
-# Chapter 12: MCP Integration and External Protocols
+# Chapter 13: MCP Integration and External Protocols
 
 > "Protocols are the language systems use to communicate; good protocols turn integration into composition rather than coding."
 > -- Adapted from *Designing Distributed Systems*
@@ -15,7 +15,7 @@
 
 ---
 
-## 12.1 MCP Architecture Overview
+## 13.1 MCP Architecture Overview
 
 ```mermaid
 flowchart TD
@@ -281,7 +281,7 @@ sequenceDiagram
 
 ---
 
-## 12.2 MCP Tool Integration
+## 13.2 MCP Tool Integration
 
 MCP tool integration is the process of seamlessly incorporating external server capabilities into Claude Code's internal tool system. This process involves three key stages: Discovery, Mapping, and Registration. Understanding this pipeline is understanding how MCP transforms "external tools" into "internal capabilities."
 
@@ -463,7 +463,7 @@ This four-layer permission model follows the "Defense in Depth" principle: even 
 
 ---
 
-## 12.3 MCP Permissions and Security
+## 13.3 MCP Permissions and Security
 
 Security is the most critical topic in MCP integration. Unlike built-in tools, MCP tools come from external third parties, and their behavior is unpredictable and uncontrollable. Therefore, Claude Code has built a multi-layered defense system for MCP, from configuration scopes to server approval, from tool allowlists to plugin deduplication — each layer targets specific security threats.
 
@@ -670,7 +670,7 @@ The allowlist check occurs during the tool discovery stage — after Claude Code
 
 ---
 
-## 12.4 IDE Integration: The Bridge System
+## 13.4 IDE Integration: The Bridge System
 
 The Bridge system is the core layer for bidirectional communication between Claude Code and the external world. It implements integration with IDEs like VS Code and JetBrains, as well as Claude.ai platform remote control functionality. If the MCP protocol is the "dialect" between Claude Code and tool servers, then the Bridge system is the "lingua franca" between Claude Code and the entire external world.
 

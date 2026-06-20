@@ -62,14 +62,15 @@ The market is saturated with guides on "how to write better prompts" and "how to
 
 | Metric | Count |
 |--------|-------|
-| Total word count | 420K characters (Chinese) / 75K+ words (English) |
-| Main chapters | 15 chapters + 4 appendices |
-| Mermaid architecture/flow/state diagrams | 139 |
-| Core subsystems covered | Tool system, permission pipeline, context compression, memory system, hook system, sub-agent dispatch, MCP integration, skill plugins, streaming architecture, Plan mode |
-| Design decisions analyzed | 50+ "why designed this way" |
-| Glossary terms (bilingual) | 100 |
+| Total word count | 500K characters (Chinese) / 90K+ words (English) |
+| Main chapters | 20 chapters + 5 appendices |
+| Mermaid architecture/flow/state diagrams | 150+ |
+| Core subsystems covered | Prerequisites, tool system, permission pipeline, context compression, error recovery, memory system, hook system, sub-agent dispatch, MCP integration, skill plugins, streaming architecture, Plan mode, Codex comparison, team adoption |
+| Design decisions analyzed | 60+ "why designed this way" |
+| Glossary terms (bilingual) | 120+ |
 | Feature flags | 89 |
 | Registered tools | 50+ |
+| Engineering checklists | 5 sets (pre-run/design review/context governance/security hardening/production deployment) |
 
 </details>
 
@@ -79,13 +80,13 @@ The market is saturated with guides on "how to write better prompts" and "how to
 
 ## Quick Navigation
 
-> **Short on time?** 01 → 02 → 04 → 15 — get the core insights and hands-on skills
+> **Short on time?** 00 → 01 → 02 → 04 → 19 — get the core insights and hands-on skills
 >
 > **Experienced?** Jump to Part 2 + Part 3, backtrack to Part 1 for concept gaps
 >
-> **Systematic study?** Cover to cover with exercises, build your Harness in Ch15 (~2–3 weeks)
+> **Systematic study?** Cover to cover with exercises, build your Harness in Ch17 (~2–3 weeks)
 >
-> **Just need reference?** Go straight to [Appendices](#appendix--reference-quick-lookup) — A (modules) / B (tools) / C (flags) / D (glossary)
+> **Just need reference?** Go straight to [Appendices](#appendix--reference-quick-lookup) — A (modules) / B (tools) / C (flags) / D (glossary) / E (checklists)
 
 ---
 
@@ -97,42 +98,47 @@ The market is saturated with guides on "how to write better prompts" and "how to
 
 | # | Chapter | Core Content |
 |:-:|---------|-------------|
+| 00 | [Prerequisites](Part-1-Foundations/00-Prerequisites.md) | TypeScript core crash course; async programming (Promise→async/await→AsyncGenerator); Zod validation; React/Ink terminal UI; HTTP/SSE/JSON-RPC basics; LLM API fundamentals |
 | 01 | [The New Paradigm of Agent Programming](Part-1-Foundations/01-The-New-Paradigm-of-Agent-Programming.md) | Copilot → Claude Code evolution; five design principles; Bun + React/Ink + Zod v4 stack |
 | 02 | [The Dialog Loop — Agent's Heartbeat](Part-1-Foundations/02-The-Dialog-Loop-Heartbeat-of-an-Agent.md) | `while(true)` async generator loop; five yield events; ten termination reasons; `QueryDeps` DI |
-| 03 | [The Tool System — Agent's Hands](Part-1-Foundations/03-The-Tool-System-Agent-Hands.md) | `Tool<I,O,P>` five-element protocol; fail-safe `buildTool` factory; 45+ tools × 12 categories; concurrent partitioning |
+| 03 | [The Tool System — Agent's Hands](Part-1-Foundations/03-The-Tool-System-Agent-Hands.md) | `Tool<I,O,P>` five-element protocol; fail-safe `buildTool` factory; 66+ tools × 12 categories; concurrent partitioning |
 | 04 | [The Permission Pipeline — Agent's Guardrails](Part-1-Foundations/04-The-Permission-Pipeline-Agent-Guardrails.md) | Four-stage pipeline; five permission modes; Bash rule matching; speculative classifier 2s Promise.race |
 
 ### Part 2. Core Systems — Deep Into Subsystems
 
-> Dissect the four core subsystems — configuration, memory, context, and hooks.
+> Dissect the five core subsystems — configuration, memory, context, error recovery, and hooks.
 
 | # | Chapter | Core Content |
 |:-:|---------|-------------|
 | 05 | [Settings & Configuration — Agent's DNA](Part-2-Core-Systems/05-Settings-and-Configuration-Agent-DNA.md) | Six-layer config priority chain; merge rules; security boundary & supply chain defense; dual-layer feature gating |
 | 06 | [The Memory System — Agent's Long-Term Memory](Part-2-Core-Systems/06-The-Memory-System-Agent-Long-Term-Memory.md) | Four closed memory types; "only save non-derivable info"; MEMORY.md index; Fork memory mechanism |
 | 07 | [Context Management — Agent's Working Memory](Part-2-Core-Systems/07-Context-Management-Agent-Working-Memory.md) | Effective window formula; four-level compression (Snip→MicroCompact→Collapse→AutoCompact); circuit breaker |
-| 08 | [The Hook System — Agent's Lifecycle Extension Points](Part-2-Core-Systems/08-The-Hook-System-Agent-Lifecycle-Extension-Points.md) | Five hook types; 26 lifecycle events; JSON response protocol; six-layer priority; three-layer security |
+| 08 | [Error Recovery — Agent's Resilience](Part-2-Core-Systems/08-Error-Recovery-Agent-Resilience.md) | `prompt_too_long` layered recovery; `max_output_tokens` continuation-first; reactive compact anti-death-spiral; circuit breaker; interrupt ledger closure |
+| 09 | [The Hook System — Agent's Lifecycle Extension Points](Part-2-Core-Systems/09-The-Hook-System-Agent-Lifecycle-Extension-Points.md) | Five hook types; 26 lifecycle events; JSON response protocol; six-layer priority; three-layer security |
 
 ### Part 3. Advanced Patterns — Composition & Extension
 
-> Explore how Agents compose, orchestrate, and extend — from sub-agents to MCP protocol bridging.
+> Explore how Agents compose, orchestrate, and extend — from sub-agents to MCP protocol bridging, to dual-system architecture comparison.
 
 | # | Chapter | Core Content |
 |:-:|---------|-------------|
-| 09 | [Sub-Agents and the Fork Pattern](Part-3-Advanced-Patterns/09-Sub-Agents-and-the-Fork-Pattern.md) | Three Agent sources; four built-in Agents; byte-level Fork context inheritance; recursive Fork protection |
-| 10 | [The Coordinator Pattern — Multi-Agent Orchestration](Part-3-Advanced-Patterns/10-The-Coordinator-Pattern-Multi-Agent-Orchestration.md) | Coordinator-Worker dual gating; "orchestrate-only" constraint; four addressing modes; four-stage workflow |
-| 11 | [The Skill System & Plugin Architecture](Part-3-Advanced-Patterns/11-The-Skill-System-and-Plugin-Architecture.md) | 11 core skills; SKILL.md frontmatter; three-level parameter substitution; layered loading; plugin cache |
-| 12 | [MCP Integration & External Protocols](Part-3-Advanced-Patterns/12-MCP-Integration-and-External-Protocols.md) | 8 transport protocols; five-state connection management; three-part tool naming; Bridge bidirectional comms |
+| 10 | [Sub-Agents and the Fork Pattern](Part-3-Advanced-Patterns/10-Sub-Agents-and-the-Fork-Pattern.md) | Three Agent sources; four built-in Agents; byte-level Fork context inheritance; recursive Fork protection |
+| 11 | [The Coordinator Pattern — Multi-Agent Orchestration](Part-3-Advanced-Patterns/11-The-Coordinator-Pattern-Multi-Agent-Orchestration.md) | Coordinator-Worker dual gating; "orchestrate-only" constraint; four addressing modes; four-stage workflow |
+| 12 | [The Skill System & Plugin Architecture](Part-3-Advanced-Patterns/12-The-Skill-System-and-Plugin-Architecture.md) | 11 core skills; SKILL.md frontmatter; three-level parameter substitution; layered loading; plugin cache |
+| 13 | [MCP Integration & External Protocols](Part-3-Advanced-Patterns/13-MCP-Integration-and-External-Protocols.md) | 8 transport protocols; five-state connection management; three-part tool naming; Bridge bidirectional comms |
+| 14 | [Claude Code and Codex: Architecture Comparison](Part-3-Advanced-Patterns/14-Claude-Code-and-Codex-Architecture-Comparison.md) | Control plane: dynamic assembly vs structured fragments; query loop vs Thread/Rollout/State; runtime orchestration vs policy language; convergence & divergence |
 
 ### Part 4. Engineering Practice — From Principles to Construction
 
-> Performance optimization details and a practical roadmap for building a complete Harness from scratch.
+> Performance optimization, team adoption guidance, principle summary, and a practical roadmap for building a complete Harness from scratch.
 
 | # | Chapter | Core Content |
 |:-:|---------|-------------|
-| 13 | [Streaming Architecture & Performance Optimization](Part-4-Engineering-Practice/13-Streaming-Architecture-and-Performance-Optimization.md) | QueryEngine lifecycle; concurrency control; startup optimization 160ms→65ms (-59%); lazy loading |
-| 14 | [Plan Mode & Structured Workflows](Part-4-Engineering-Practice/14-Plan-Mode-and-Structured-Workflows.md) | "Think before you act" philosophy; plan file three-layer recovery; local scheduling & remote triggers |
-| 15 | [Building Your Own Agent Harness](Part-4-Engineering-Practice/15-Building-Your-Own-Agent-Harness.md) | Six-step implementation roadmap; circular dependency solutions; four-layer observability; security threat model |
+| 15 | [Streaming Architecture & Performance Optimization](Part-4-Engineering-Practice/15-Streaming-Architecture-and-Performance-Optimization.md) | QueryEngine lifecycle; concurrency control; startup optimization 160ms→65ms (-59%); lazy loading |
+| 16 | [Plan Mode & Structured Workflows](Part-4-Engineering-Practice/16-Plan-Mode-and-Structured-Workflows.md) | "Think before you act" philosophy; plan file three-layer recovery; local scheduling & remote triggers |
+| 17 | [Building Your Own Agent Harness](Part-4-Engineering-Practice/17-Building-Your-Own-Agent-Harness.md) | Six-step implementation roadmap; circular dependency solutions; four-layer observability; security threat model |
+| 18 | [Team Adoption — From Tools to Institutions](Part-4-Engineering-Practice/18-Team-Adoption-From-Tools-to-Institutions.md) | Three team archetypes; phased checklists; CLAUDE.md vs AGENTS.md; failure/success encoding mechanisms |
+| 19 | [Ten Principles of Agent Harness](Part-4-Engineering-Practice/19-Ten-Principles-of-Agent-Harness.md) | Constrained execution; prompt as control plane; errors as main path; scheduling discipline; layered recovery; context budgeting; structure over cleverness |
 
 ### Appendix — Reference Quick-Lookup
 
@@ -141,7 +147,8 @@ The market is saturated with guides on "how to write better prompts" and "how to
 | [A](Appendices/A-Architecture-Navigation-Map.md) | **Architecture Navigation Map** — 16 core modules, dependency tree, 6 data flow paths, 10 design patterns |
 | [B](Appendices/B-Complete-Tool-Inventory.md) | **Complete Tool Inventory** — 50+ tools × 12 categories, readOnly/destructive/concurrencySafe attributes |
 | [C](Appendices/C-Feature-Flag-Reference.md) | **Feature Flag Reference** — 89 flags × 13 categories, compile-time/runtime types, dependency graphs |
-| [D](Appendices/D-Glossary.md) | **Glossary** — 100 bilingual term definitions with cross-references and chapter locations |
+| [D](Appendices/D-Glossary.md) | **Glossary** — 120+ bilingual term definitions with cross-references and chapter locations |
+| [E](Appendices/E-Engineering-Checklists.md) | **Engineering Checklists** — Pre-run, design review, context governance, security hardening, production deployment |
 
 ---
 
@@ -149,10 +156,12 @@ The market is saturated with guides on "how to write better prompts" and "how to
 
 |  | Reader | What You'll Gain |
 |:-:|--------|-----------------|
+| | **CS Undergraduates** | Chapter 0 prerequisites fill TypeScript/async/networking gaps; zero-threshold entry into Agent architecture |
 | | **Architects** | Complete Agent design space map and engineering trade-off analysis |
 | | **Senior Engineers** | Underlying mechanisms of tool invocation, streaming, and permission control |
 | | **Researchers** | Publishable-quality Agent system implementation analysis |
 | | **Claude Code Users** | Understand design intent and maximize capabilities |
+| | **Team Leads** | Chapter 18 team adoption guide; transform individual experience into team institutions |
 
 ---
 
