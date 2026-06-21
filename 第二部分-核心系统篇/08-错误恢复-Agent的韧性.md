@@ -294,7 +294,7 @@ assert every withheld_recoverable_error surfaces iff recovery exhausted
     // 暂缓的错误必须在恢复穷尽后表面化
 ```
 
-### 8.5.4 实现参考：指数退避重试
+### 8.5.4 实现参考：**指数退避**（Exponential Backoff——重试策略，每次重试的等待时间按指数增长如 1s→2s→4s，避免频繁重试加重服务器负担）重试
 
 API 调用失败时的重试是恢复系统的基础。以下是 Claude Code 采用的重试模式：
 
@@ -365,7 +365,7 @@ async function withRetry<T>(
 
 ### 8.6.2 账本闭合
 
-Claude Code 的中断处理遵循"账本闭合"（Ledger Closure）原则：
+Claude Code 的中断处理遵循"**账本闭合**"（Ledger Closure——确保每个 tool_use 都有对应 tool_result 的完整性保证，类似财务中借贷必须平衡）（Ledger Closure）原则：
 
 ```mermaid
 flowchart TD
@@ -485,4 +485,110 @@ assert every withheld_recoverable_error surfaces iff recovery exhausted
 
 6. **恢复保护叙事一致性。** 好的错误处理不仅让系统"活下来"，还让系统能解释自己经历了什么。这是可观测性的基础。
 
-在下一章中，我们将转向钩子系统——Agent 的生命周期扩展点。如果说错误恢复是 Agent 的"免疫系统"，那么钩子系统就是 Agent 的"神经系统"——它不直接处理错误，而是在关键节点插入观察和干预的能力。
+---
+
+## 实战练习
+
+### 练习 1：运行指数退避重试与断路器
+
+以下代码实现了第 8 章的核心概念——指数退避重试（对应 `src/agent.ts:36-61`）、断路器模式（对应 `src/services/compact/autoCompact.ts`）。复制到 `mini-recovery.ts` 后用 `npx tsx mini-recovery.ts` 运行。
+
+> **源码参考：** 重试逻辑提取自 Claude Code `src/agent.ts` 中的 `withRetry` 函数；断路器模式对应 `autoCompact.ts` 中的 `consecutiveFailures` 计数器。
+
+```typescript
+// mini-recovery.ts — 最小错误恢复系统（~80 行）
+// 源码参考：Claude Code src/agent.ts:36-61, src/services/compact/autoCompact.ts
+
+// ── 指数退避重试（agent.ts:36-61） ───────────────────────
+function isRetryable(error: any): boolean {
+  const status = error?.status || error?.statusCode;
+  if ([429, 503, 529].includes(status)) return true;
+  if (error?.code === "ECONNRESET" || error?.code === "ETIMEDOUT") return true;
+  return false;
+}
+
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try { return await fn(); }
+    catch (error: any) {
+      if (attempt >= maxRetries || !isRetryable(error)) throw error;
+      const delay = Math.min(1000 * Math.pow(2, attempt), 30000) + Math.random() * 1000;
+      console.log(`    Retry ${attempt + 1}/${maxRetries} after ${Math.round(delay)}ms (${error.message})`);
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+}
+
+// ── 断路器（autoCompact.ts pattern） ─────────────────────
+class CircuitBreaker {
+  private failures = 0;
+  constructor(private maxFailures = 3) {}
+  canTry() { return this.failures < this.maxFailures; }
+  recordSuccess() { this.failures = 0; }
+  recordFailure() { this.failures++; }
+  getState() { return this.failures >= this.maxFailures ? "OPEN" : "CLOSED"; }
+}
+
+async function compactConversation(messages: string[], breaker: CircuitBreaker): Promise<string[]> {
+  if (messages.length < 4) return messages;
+  if (!breaker.canTry()) { console.log("    ⚡ Circuit OPEN — skipping compact"); return messages; }
+  try {
+    if (messages.length > 20) throw new Error("prompt_too_long");
+    const summary = `[Compacted: ${messages.length} msgs → 2 msgs]`;
+    breaker.recordSuccess();
+    return [summary, "Understood. How can I continue?"];
+  } catch (err: any) {
+    breaker.recordFailure();
+    console.log(`    ❌ Compact failed: ${err.message} (failures: ${breaker["failures"]})`);
+    return messages;
+  }
+}
+
+async function main() {
+  console.log("=== 错误恢复测试 ===\n");
+
+  console.log("1. 指数退避重试（429 限流）:");
+  let callCount = 0;
+  await withRetry(async () => {
+    callCount++;
+    if (callCount < 3) throw { status: 429, message: "rate limited" };
+    return "success";
+  }, 3);
+  console.log(`    ✅ 第 ${callCount} 次成功\n`);
+
+  console.log("2. 不可重试错误（400）:");
+  try { await withRetry(async () => { throw { status: 400, message: "bad request" }; }); }
+  catch (err: any) { console.log(`    ✅ 正确跳过重试: ${err.message}\n`); }
+
+  console.log("3. 断路器熔断:");
+  const breaker = new CircuitBreaker(3);
+  for (let i = 0; i < 5; i++) await compactConversation(Array(25).fill("msg"), breaker);
+
+  console.log("\n4. 断路器重置后恢复:");
+  breaker.recordSuccess();
+  await compactConversation(Array(6).fill("msg"), breaker);
+  console.log("    ✅ 重置后压缩成功");
+}
+main();
+```
+
+### 练习 2：分析恢复路径矩阵
+
+根据 8.7 节的恢复路径失败矩阵，为以下场景写出恢复路径：
+
+| 场景 | 前置状态 | 触发条件 | 应走哪条路径？ |
+|------|---------|---------|-------------|
+| A | 有已暂存折叠 | `prompt_too_long` | ? |
+| B | 无折叠，未尝试过压缩 | `prompt_too_long` | ? |
+| C | 已尝试过压缩 | `prompt_too_long` | ? |
+| D | 当前 cap < MAX | `max_output_tokens` | ? |
+| E | 当前 cap = MAX | `max_output_tokens` | ? |
+
+**参考答案：** A→flush 折叠；B→响应式压缩；C→表面化错误（跳过 stop hooks）；D→提升限制；E→注入继续指令。
+
+### 练习 3：在 Claude Code 中观察恢复行为
+
+启动 Claude Code，发送一系列大量上下文请求，观察：
+1. token 使用量接近 85% 时的自动压缩触发
+2. `/compact` 手动压缩前后的 token 数变化
+3. 连续压缩失败时断路器的行为

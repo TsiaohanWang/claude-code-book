@@ -371,7 +371,7 @@ Particularly noteworthy is the MCP (Model Context Protocol) integration approach
 
 Claude Code's state management draws on the immutable state patterns of Redux/Zustand. The core state store is implemented by a minimal store implementation. This implementation, while concise, contains important design decisions:
 
-- **Updater Function Pattern**: State updates receive a `(prev: T) => T` function rather than the new state value itself. This ensures that every state update is based on the previous state, avoiding race conditions.
+- **Updater Function Pattern**: State updates receive a `(prev: T) => T` function rather than the new state value itself. This ensures that every state update is based on the previous state, avoiding **race conditions** (Race Condition — when multiple concurrent operations access shared resources in unpredictable order, causing program behavior to depend on timing, a classic concurrency bug).
 - **Reference Equality Check**: Reference comparison ensures notifications are triggered only when actual changes occur, avoiding unnecessary re-renders.
 - **Subscribe/Unsubscribe Pattern**: Listeners are managed through a collection, with cleanup functions returned to prevent memory leaks.
 

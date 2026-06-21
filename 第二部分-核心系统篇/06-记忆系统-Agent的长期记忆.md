@@ -213,7 +213,7 @@ Agent:
 
 ### 6.2.1 Frontmatter 格式
 
-每条记忆是一个独立的 Markdown 文件，使用 YAML Frontmatter 声明元数据。格式要求包含 name（记忆名称）、description（一行描述，用于判断未来对话的相关性）和 type（四种类型之一）三个字段。`type` 字段必须是四种类型之一（严格校验），没有 type 字段的遗留文件可以继续工作，但无法被类型过滤。
+每条记忆是一个独立的 Markdown 文件，使用 **YAML Frontmatter**（YAML——一种人类可读的数据序列化格式，常用于配置文件；Frontmatter——Markdown 文件顶部用 `---` 包围的元数据区域，用于声明文件的结构化属性）声明元数据。格式要求包含 name（记忆名称）、description（一行描述，用于判断未来对话的相关性）和 type（四种类型之一）三个字段。`type` 字段必须是四种类型之一（严格校验），没有 type 字段的遗留文件可以继续工作，但无法被类型过滤。
 
 **为什么使用 Markdown 文件而非数据库？**
 
@@ -574,7 +574,85 @@ Claude Code 选择 Level 1 是一种务实的平衡。Level 0 太保守——如
 
 ## 实战练习
 
-### 练习 1：记忆类型分类
+### 练习 1：运行记忆系统
+
+以下代码实现了第 6 章的核心概念——四种记忆类型、YAML Frontmatter、MEMORY.md 索引。复制到 `mini-memory.ts` 后用 `npx tsx mini-memory.ts` 运行。
+
+> **源码参考：** 对应 Claude Code `src/memdir/memdir.ts` 中的记忆 CRUD 和索引更新逻辑。
+
+```typescript
+// mini-memory.ts — 最小记忆系统（~80 行）
+// 源码参考：Claude Code src/memdir/memdir.ts
+
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, unlinkSync } from "fs";
+import { join } from "path";
+import { homedir } from "os";
+
+type MemoryType = "user" | "feedback" | "project" | "reference";
+interface MemoryEntry { name: string; description: string; type: MemoryType; filename: string; content: string; }
+const VALID_TYPES = new Set<MemoryType>(["user", "feedback", "project", "reference"]);
+const TEST_DIR = join(homedir(), ".mini-claude-test", "memory");
+function getMemoryDir(): string { if (!existsSync(TEST_DIR)) mkdirSync(TEST_DIR, { recursive: true }); return TEST_DIR; }
+
+function parseFrontmatter(raw: string): { meta: Record<string, string>; body: string } {
+  const match = raw.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+  if (!match) return { meta: {}, body: raw };
+  const meta: Record<string, string> = {};
+  for (const line of match[1].split("\n")) { const [k, ...r] = line.split(":"); if (k && r.length) meta[k.trim()] = r.join(":").trim(); }
+  return { meta, body: match[2] };
+}
+
+function formatFrontmatter(meta: Record<string, string>, body: string): string {
+  return `---\n${Object.entries(meta).map(([k, v]) => `${k}: ${v}`).join("\n")}\n---\n${body}`;
+}
+
+function slugify(text: string): string { return text.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 40); }
+
+function listMemories(): MemoryEntry[] {
+  const dir = getMemoryDir();
+  return readdirSync(dir).filter(f => f.endsWith(".md") && f !== "MEMORY.md").map(f => {
+    try {
+      const { meta, body } = parseFrontmatter(readFileSync(join(dir, f), "utf-8"));
+      if (!meta.name || !meta.type) return null;
+      return { name: meta.name, description: meta.description || "", type: (VALID_TYPES.has(meta.type as MemoryType) ? meta.type : "project") as MemoryType, filename: f, content: body };
+    } catch { return null; }
+  }).filter(Boolean) as MemoryEntry[];
+}
+
+function saveMemory(entry: Omit<MemoryEntry, "filename">): string {
+  const dir = getMemoryDir();
+  const filename = `${entry.type}_${slugify(entry.name)}.md`;
+  writeFileSync(join(dir, filename), formatFrontmatter({ name: entry.name, description: entry.description, type: entry.type }, entry.content));
+  updateMemoryIndex();
+  return filename;
+}
+
+function updateMemoryIndex(): void {
+  const memories = listMemories();
+  writeFileSync(join(getMemoryDir(), "MEMORY.md"), "# Memory Index\n\n" + memories.map(m => `- **[${m.name}](${m.filename})** (${m.type}) — ${m.description}`).join("\n"));
+}
+
+function main() {
+  console.log("=== 记忆系统测试 ===\n");
+  const types: MemoryType[] = ["user", "feedback", "project", "reference"];
+  const names = ["user-pref", "code-style", "sprint-goal", "api-docs"];
+  const descs = ["Prefers concise output", "Use 2-space indent", "Auth module by Friday", "OpenAPI spec at /docs"];
+  for (let i = 0; i < types.length; i++) {
+    saveMemory({ name: names[i], description: descs[i], type: types[i], content: `Content for ${names[i]}` });
+    console.log(`  ✅ Saved: ${types[i]}_${slugify(names[i])}.md (${types[i]})`);
+  }
+  console.log(`\n--- MEMORY.md 索引 ---\n${readFileSync(join(getMemoryDir(), "MEMORY.md"), "utf-8")}`);
+  const entries = listMemories();
+  console.log(`\n--- 验证 ---`);
+  console.log(`  总计: ${entries.length} 条记忆`);
+  for (const t of types) console.log(`  ${t}: ${entries.filter(e => e.type === t).length} 条`);
+  for (const e of entries) unlinkSync(join(getMemoryDir(), e.filename));
+  console.log(`\n  🧹 清理完成`);
+}
+main();
+```
+
+### 练习 2：记忆类型分类
 
 以下信息应该保存为哪种记忆类型？
 

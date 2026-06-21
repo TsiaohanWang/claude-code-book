@@ -3,7 +3,7 @@
 > **Learning Objectives:** After reading this chapter, you will be able to:
 >
 > - Understand the design philosophy, capability boundaries, and applicable scenarios of five hook types
-> - Master the trigger timing, input structure, and exit code semantics of 26 lifecycle events
+> - Master the trigger timing, input structure, and exit code semantics of 31 lifecycle events
 > - Design structured hook responses, utilizing `decision`, `updatedInput`, `additionalContext` and other fields for fine-grained control
 > - Understand the multi-layer security model: global disable, managed-hooks-only, workspace trust check three-layer gating
 > - Analyze hook priority ordering rules and conflict resolution strategies
@@ -50,7 +50,7 @@ flowchart TD
 
 ### Five Hook Types
 
-The hook Schema definition module defines four persistable hook types, plus FunctionHook which only exists at runtime, making five total. This comparison table helps you quickly understand each hook type's positioning and capability boundaries:
+The hook Schema definition module defines five hook types. This comparison table helps you quickly understand each hook type's positioning and capability boundaries:
 
 ```mermaid
 graph TD
@@ -59,20 +59,20 @@ graph TD
         prompt["Prompt Hook<br/>──────────<br/>Engine: LLM inference<br/>Persistable: Yes<br/>Config Format: JSON<br/>Complexity: Medium<br/>Latency: Seconds<br/>Typical Scenario: Content moderation"]
         agent["Agent Hook<br/>──────────<br/>Engine: LLM multi-step<br/>Persistable: Yes<br/>Config Format: JSON<br/>Complexity: High<br/>Latency: Seconds to Minutes<br/>Typical Scenario: Test verification"]
         http["HTTP Hook<br/>──────────<br/>Engine: HTTP request<br/>Persistable: Yes<br/>Config Format: JSON<br/>Complexity: Medium<br/>Latency: Network-dependent<br/>Typical Scenario: CI integration"]
-        func["Function Hook<br/>──────────<br/>Engine: TS callback<br/>Persistable: No<br/>Config Format: TypeScript API<br/>Complexity: Low<br/>Latency: Milliseconds<br/>Typical Scenario: Runtime interception"]
+        mcp["MCP Tool Hook<br/>──────────<br/>Engine: MCP server<br/>Persistable: Yes<br/>Config Format: JSON<br/>Complexity: Medium<br/>Latency: Network-dependent<br/>Typical Scenario: External tool integration"]
     end
 
     classDef cmd fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#0d47a1
     classDef prompt fill:#e8f5e9,stroke:#388e3c,stroke-width:2px,color:#1b5e20
     classDef agent fill:#fff3e0,stroke:#ff9800,stroke-width:2px,color:#e65100
     classDef http fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#4a148c
-    classDef func fill:#fce4ec,stroke:#c2185b,stroke-width:2px,color:#880e4f
+    classDef mcp fill:#fce4ec,stroke:#c2185b,stroke-width:2px,color:#880e4f
 
     class cmd cmd
     class prompt prompt
     class agent agent
     class http http
-    class func func
+    class mcp mcp
 ```
 
 **1. Command Hook** (`BashCommandHookSchema`)
@@ -156,13 +156,13 @@ Configuration example:
 
 > **Anti-pattern warning:** When using `allowedEnvVars` in HTTP hooks, be sure to only expose necessary variables. Don't open the entire environment variable whitelist, as this could lead to credential leakage in multi-user environments.
 
-**5. Function Hook**
+**5. MCP Tool Hook** (`type: "mcp_tool"`)
 
-In-memory hooks that only exist at runtime, executing TypeScript callback functions. Cannot be persisted to configuration files, lifecycle bound to session. Callbacks receive message arrays and optional abort signal, returning boolean indicating success.
+Calls a tool on an already-connected MCP server as a hook. The tool's text output is treated like command-hook stdout. This allows integrating external MCP tools into the hook system for more complex workflows.
 
-Applicable scenarios: Scenarios requiring deep interaction with Claude Code runtime state, such as dynamic behavior control in SDK embedding mode.
+Applicable scenarios: Calling external code quality detection services, triggering CI/CD pipelines, integrating with third-party systems.
 
-> **Design reflection:** Why can't Function hooks be persisted? Because TypeScript callback functions are in-memory executable code references that cannot be serialized to JSON configuration. This is the boundary between "code as configuration vs configuration as code" -- persistable hooks (Command/Prompt/Agent/HTTP) are fundamentally **declarative configuration**, while Function hooks are **imperative code**. Mixing both in the same configuration system would lead to unpredictable behavior and security risks.
+> **Internal mechanism supplement:** Beyond these five user-configurable hook types, Claude Code also has an internal `FunctionHook` -- a TypeScript callback that only exists at runtime, cannot be persisted to configuration files, and is lifecycle-bound to the session. It's used for dynamic behavior control in SDK embedding mode. This separation of "declarative configuration vs imperative code" ensures the predictability and security of the configuration system.
 
 ### Sync vs Async Hooks
 
@@ -210,7 +210,7 @@ Async hook implementation is completed in background execution functions. Async-
 
 ## 9.2 Core Lifecycle Events
 
-The SDK core types module defines the complete `HOOK_EVENTS` array with 26 lifecycle events, covering all critical nodes including tool invocation, user interaction, session management, sub-agents, compression, permissions, configuration changes, etc.
+The SDK core types module defines the complete `HOOK_EVENTS` array with 31 lifecycle events, covering all critical nodes including tool invocation, user interaction, session management, sub-agents, compression, permissions, configuration changes, etc.
 
 The best way to understand these events is to imagine an Agent's complete execution cycle as an "assembly line". Materials (user requests) enter from one end, are processed through multiple stations (lifecycle events), and finally exit from the other end as finished products (Agent responses). Each station has "sensors" (events) installed, and hooks are the "control units" connected to these sensors.
 
@@ -658,7 +658,7 @@ flowchart TD
 
 Hook configuration is strictly validated through Zod Schema. The hook Schema module defines the complete type system:
 
-- `HookCommandSchema`: Discriminated union of four persistable hooks -- type discrimination through `type` field (`command`, `prompt`, `agent`, `http`)
+- `HookCommandSchema`: Discriminated union of five hook types -- type discrimination through `type` field (`command`, `prompt`, `agent`, `http`, `mcp_tool`)
 - `HookMatcherSchema`: Matcher configuration, containing `matcher` string pattern and `hooks` array
 - `HooksSchema`: Top-level configuration, mapping events to matcher arrays using `partialRecord`
 
@@ -1040,9 +1040,9 @@ Design a complete hook configuration solution meeting above requirements.
 
 ## Key Takeaways
 
-1. **Five hook types**: command (Shell command), prompt (LLM evaluation), agent (Agentic validation), http (HTTP call), function (runtime callback); first four are persistable, last one only exists in session memory. Decision tree for choosing hook type: need to execute system commands use Command, need intelligent judgment use Prompt, need multi-step validation use Agent, need external system integration use HTTP, need deep runtime interaction use Function.
+1. **Five hook types**: command (Shell command), http (HTTP call), mcp_tool (MCP server tool), prompt (LLM evaluation), agent (Agentic validation). Decision tree: need to execute system commands → Command, need external system integration → HTTP, need MCP tool integration → MCP Tool, need intelligent judgment → Prompt, need multi-step validation with tool access → Agent.
 
-2. **26 lifecycle events**: Covering complete Agent lifecycle including tool calls, user interaction, session management, sub-agents, compression, permissions, configuration changes. Each event has clear trigger timing, input structure, and exit code semantics.
+2. **31 lifecycle events**: Covering complete Agent lifecycle including tool calls, user interaction, session management, sub-agents, compression, permissions, configuration changes. Each event has clear trigger timing, input structure, and exit code semantics.
 
 3. **Structured response protocol**: Hook output is JSON containing `decision` (approve/block), `updatedInput` (modify tool input), `additionalContext` (inject context) fields. Exit codes and JSON response jointly control hook behavior; both should express consistent intent.
 

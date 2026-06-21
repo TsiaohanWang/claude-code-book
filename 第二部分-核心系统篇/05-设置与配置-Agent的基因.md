@@ -541,7 +541,62 @@ const setState = useSetAppState();
 
 ## 实战练习
 
-### 练习 1：配置合并预测
+### 练习 1：运行配置合并算法
+
+以下代码实现了第 5 章的核心概念——六层配置优先级链和深度合并规则。复制到 `mini-config.ts` 后用 `npx tsx mini-config.ts` 运行。
+
+> **源码参考：** 合并逻辑对应 Claude Code `src/utils/settings.ts` 中的 `settingsMergeCustomizer`；优先级链对应 `src/utils/settings.ts` 中的六层配置源加载。
+
+```typescript
+// mini-config.ts — 最小配置合并系统（~60 行）
+// 源码参考：Claude Code src/utils/settings.ts
+
+interface Settings { permissions?: { allow?: string[]; deny?: string[] }; model?: string; theme?: string; }
+type ConfigSource = { name: string; priority: number; settings: Settings };
+
+// 深度合并（对应 settingsMergeCustomizer）
+function deepMerge(target: any, source: any): any {
+  const result = { ...target };
+  for (const key of Object.keys(source)) {
+    if (Array.isArray(source[key]) && Array.isArray(target[key])) {
+      result[key] = [...new Set([...target[key], ...source[key]])]; // 数组拼接去重
+    } else if (typeof source[key] === "object" && source[key] !== null && typeof target[key] === "object" && target[key] !== null) {
+      result[key] = deepMerge(target[key], source[key]); // 对象深度合并
+    } else {
+      result[key] = source[key]; // 标量直接覆盖
+    }
+  }
+  return result;
+}
+
+// 六层优先级链（对应 Ch05 图 5.1）
+function mergeSettings(sources: ConfigSource[]): Settings {
+  const sorted = [...sources].sort((a, b) => a.priority - b.priority);
+  let result: Settings = {};
+  for (const source of sorted) result = deepMerge(result, source.settings);
+  return result;
+}
+
+function main() {
+  console.log("=== 配置合并测试 ===\n");
+  const sources: ConfigSource[] = [
+    { name: "defaults",  priority: 0, settings: { permissions: { allow: ["Read", "Glob"], deny: [] }, model: "sonnet", theme: "dark" } },
+    { name: "user",      priority: 1, settings: { permissions: { allow: ["Grep"] }, theme: "light" } },
+    { name: "project",   priority: 2, settings: { permissions: { allow: ["Bash(npm test)"], deny: ["Bash(npm publish)"] } } },
+    { name: "session",   priority: 3, settings: { permissions: { allow: ["Bash(git:*)"] } } },
+  ];
+  for (const s of sources) console.log(`  ${s.priority}. ${s.name}: allow=${s.settings.permissions?.allow}`);
+  const merged = mergeSettings(sources);
+  console.log(`\n合并结果:`);
+  console.log(`  allow: ${merged.permissions?.allow}`);
+  console.log(`  deny:  ${merged.permissions?.deny}`);
+  console.log(`  model: ${merged.model} (defaults 保留)`);
+  console.log(`  theme: ${merged.theme} (user 覆盖 defaults)`);
+}
+main();
+```
+
+### 练习 2：配置合并预测
 
 假设存在以下配置：
 

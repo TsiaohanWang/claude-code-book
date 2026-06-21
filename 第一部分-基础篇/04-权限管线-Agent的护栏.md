@@ -11,7 +11,7 @@
 
 当 Agent 自主执行任务时，它可能在一次会话中调用数十个工具——写文件、运行 Bash 命令、搜索代码。每一次调用都潜藏着风险：一个不恰当的 `rm -rf`，一次意外的 `npm publish`，都可能造成不可逆的后果。权限管线（Permission Pipeline）正是 Claude Code 为 Agent 构建的安全护栏。它不是简单的"允许/拒绝"开关，而是一套精心设计的多阶段检查机制，在自动化效率与安全控制之间寻找精确的平衡。
 
-用一个物理世界的类比来理解权限管线：一座现代化办公大楼的门禁系统不是只在入口设一个保安（单一检查点），而是在不同区域设置了不同级别的安全检查——大堂只需刷卡，会议室需要预约确认，服务器机房需要指纹验证加双人授权。每一层安全检查都是独立的，即使某一层被绕过，下一层仍然可以阻止未授权的访问。Claude Code 的权限管线正是这种"纵深防御"思想在软件系统中的体现。
+用一个物理世界的类比来理解权限管线：一座现代化办公大楼的门禁系统不是只在入口设一个保安（单一检查点），而是在不同区域设置了不同级别的安全检查——大堂只需刷卡，会议室需要预约确认，服务器机房需要指纹验证加双人授权。每一层安全检查都是独立的，即使某一层被绕过，下一层仍然可以阻止未授权的访问。Claude Code 的权限管线正是这种"**纵深防御**"（Defense in Depth——部署多层独立的安全检查，即使某层被突破，其他层仍能提供保护）思想在软件系统中的体现。
 
 本章将从架构设计出发，深入拆解权限管线的每一个阶段，理解其设计决策，并通过实战练习掌握配置方法。
 
@@ -39,7 +39,7 @@ flowchart TD
 | 1 | 工作区信任确认 | 防止恶意仓库预埋 Hook 脚本 | 不信任则禁用所有项目级配置 |
 | 2 | 权限模式 | 全局策略开关 | 5 种外部模式 + 2 种内部模式 |
 | 3 | 权限规则匹配 | 精确控制特定工具/命令 | deny > ask > allow 优先级铁律 |
-| 4 | Bash 多层安全 | 最大攻击面的专项防护 | tree-sitter AST + 23 项静态检查 |
+| 4 | Bash 多层安全 | 最大攻击面的专项防护 | **tree-sitter** AST（一个增量解析框架，能快速将源代码解析为语法树，用于语法分析和代码高亮）+ 23 项静态检查 |
 | 5 | 工具级安全 | 每个工具的安全属性声明 | validateInput → checkPermissions |
 | 6 | 沙箱与隔离 | 操作系统级进程隔离 | macOS Seatbelt / Linux 命名空间 |
 | 7 | 用户确认 | 最终人类决策权 | Hook + ML 分类器 + 用户三者竞速 |
@@ -125,7 +125,7 @@ flowchart TD
 
 **步骤 1a：工具级 deny 检查。** 这是最高的优先级。如果某个工具被整体 deny，调用立即被拒绝。
 
-`getDenyRuleForTool` 函数遍历所有来源（userSettings、projectSettings、localSettings、flagSettings、policySettings、cliArg、command、session）的 deny 规则进行匹配。匹配逻辑支持精确工具名匹配和 MCP 服务器级通配符——例如规则 `mcp__server1__*` 可以匹配该服务器下的所有工具。
+`getDenyRuleForTool` 函数遍历所有来源（userSettings、projectSettings、localSettings、flagSettings、policySettings、cliArg、command、session）的 deny 规则进行匹配。匹配逻辑支持精确工具名匹配和 MCP 服务器级**通配符**（Wildcard——用特殊字符 `*` 代表"任意字符串"的模式匹配方式，如 `*.txt` 匹配所有 .txt 文件）——例如规则 `mcp__server1__*` 可以匹配该服务器下的所有工具。
 
 七种规则来源的优先级排序体现了"就近原则"：会话级规则（最近设置的）优先于命令行参数，命令行参数优先于项目配置，项目配置优先于全局用户配置。这种优先级排序确保了更具体、更近期的规则能够覆盖更一般、更早期的规则。
 
@@ -523,7 +523,132 @@ flowchart LR
 
 **提示：** 利用 deny 规则的优先级高于 allow 规则的特性，先用宽泛的 allow 规则授权基本操作，再用精确的 deny 规则排除危险操作。
 
-### 练习 4：权限决策流的情景分析
+### 练习 5：运行一个最小权限管线
+
+以下代码实现了第 4 章的四阶段权限管线。复制到 `mini-permissions.ts` 后用 `npx tsx mini-permissions.ts` 运行。
+
+```typescript
+// mini-permissions.ts — 最小权限管线（~80 行）
+// 核心概念：四阶段管线 + deny > ask > allow 优先级 + 通配符匹配
+
+import { z } from "zod";
+
+// ── 权限规则 ────────────────────────────────────────────
+interface PermissionRule { tool: string; pattern?: string; }
+type PermissionResult = "allow" | "deny" | "ask";
+
+// ── 通配符匹配（对应 4.4 节） ──────────────────────────
+function matchPattern(rule: string, input: string): boolean {
+  if (rule === input) return true;                          // 精确匹配
+  if (rule.endsWith(":*") && input.startsWith(rule.slice(0, -2))) return true;  // 前缀匹配
+  if (rule.endsWith("*") && input.startsWith(rule.slice(0, -1))) return true;   // 尾部通配符
+  if (rule.includes("*")) {                                 // 通用通配符
+    const regex = new RegExp("^" + rule.replace(/\*/g, ".*") + "$");
+    return regex.test(input);
+  }
+  return false;
+}
+
+// ── 阶段一：validateInput（Zod Schema 验证） ────────────
+function validateInput(schema: z.ZodType<any>, input: unknown): { valid: boolean; error?: string } {
+  const result = schema.safeParse(input);
+  return result.success ? { valid: true } : { valid: false, error: result.error.issues[0]?.message };
+}
+
+// ── 阶段二：规则匹配（deny > ask > allow 铁律） ────────
+function matchRules(
+  toolName: string,
+  command: string,
+  rules: { deny: PermissionRule[]; allow: PermissionRule[] },
+): PermissionResult {
+  // 1. 先检查 deny（最高优先级）
+  for (const rule of rules.deny) {
+    if (rule.tool === toolName && (!rule.pattern || matchPattern(rule.pattern, command))) {
+      return "deny";
+    }
+  }
+  // 2. 再检查 allow
+  for (const rule of rules.allow) {
+    if (rule.tool === toolName && (!rule.pattern || matchPattern(rule.pattern, command))) {
+      return "allow";
+    }
+  }
+  // 3. 无匹配 → ask
+  return "ask";
+}
+
+// ── 四阶段管线 ──────────────────────────────────────────
+type PermissionMode = "default" | "acceptEdits" | "bypassPermissions";
+
+function checkPermission(
+  toolName: string,
+  input: Record<string, unknown>,
+  mode: PermissionMode,
+  rules: { deny: PermissionRule[]; allow: PermissionRule[] },
+): { result: PermissionResult; stage: string } {
+  // 阶段一：validateInput
+  const inputSchema = z.object({ command: z.string().min(1) });
+  const validation = validateInput(inputSchema, input);
+  if (!validation.valid) return { result: "ask", stage: `validateInput (${validation.error})` };
+
+  // 阶段二：规则匹配
+  const ruleResult = matchRules(toolName, input.command as string, rules);
+  if (ruleResult === "deny") return { result: "deny", stage: "rules (deny)" };
+  if (ruleResult === "allow") return { result: "allow", stage: "rules (allow)" };
+
+  // 阶段三：模式判断
+  if (mode === "bypassPermissions") return { result: "allow", stage: "mode (bypass)" };
+  if (mode === "acceptEdits" && ["edit_file", "write_file"].includes(toolName)) {
+    return { result: "allow", stage: "mode (acceptEdits)" };
+  }
+
+  // 阶段四：ask（交互式确认）
+  return { result: "ask", stage: "interactive (ask user)" };
+}
+
+// ── 主程序：测试各种场景 ────────────────────────────────
+function main() {
+  const rules = {
+    deny: [
+      { tool: "bash", pattern: "npm publish" },
+      { tool: "bash", pattern: "rm -rf *" },
+    ],
+    allow: [
+      { tool: "bash", pattern: "npm test" },
+      { tool: "bash", pattern: "npm run *" },
+      { tool: "bash", pattern: "git:*" },
+      { tool: "read_file" },
+    ],
+  };
+
+  const scenarios = [
+    { name: "场景A: npm test (default)", tool: "bash", input: { command: "npm test" }, mode: "default" as PermissionMode },
+    { name: "场景B: npm publish (default)", tool: "bash", input: { command: "npm publish" }, mode: "default" as PermissionMode },
+    { name: "场景C: rm -rf (bypass)", tool: "bash", input: { command: "rm -rf /tmp/test" }, mode: "bypassPermissions" as PermissionMode },
+    { name: "场景D: git commit (default)", tool: "bash", input: { command: "git commit -m test" }, mode: "default" as PermissionMode },
+    { name: "场景E: curl (default, no rule)", tool: "bash", input: { command: "curl https://api.example.com" }, mode: "default" as PermissionMode },
+    { name: "场景F: npm run build (default)", tool: "bash", input: { command: "npm run build" }, mode: "default" as PermissionMode },
+    { name: "场景G: empty command", tool: "bash", input: { command: "" }, mode: "default" as PermissionMode },
+  ];
+
+  console.log("=== 四阶段权限管线测试 ===\n");
+  for (const s of scenarios) {
+    const { result, stage } = checkPermission(s.tool, s.input, s.mode, rules);
+    const icon = result === "allow" ? "✅" : result === "deny" ? "🚫" : "❓";
+    console.log(`${icon} ${s.name}`);
+    console.log(`   结果: ${result} | 阶段: ${stage}\n`);
+  }
+}
+
+main();
+```
+
+**运行后观察：**
+- deny 规则（npm publish）即使在 bypass 模式下也被拒绝——deny > ask > allow 铁律
+- 通配符 `npm run *` 匹配 `npm run build` 但不匹配 `npm test`（后者是精确匹配）
+- `git:*` 前缀匹配覆盖所有 git 子命令
+- 空命令被 validateInput 拒绝——阶段一的"快速失败"
+- 无匹配规则时默认 ask——阶段四的人类决策
 
 分析以下场景中权限管线的决策路径：
 

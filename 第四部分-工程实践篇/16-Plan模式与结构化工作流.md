@@ -739,7 +739,72 @@ flowchart TD
 
 ## 实战练习
 
-### 练习 1：体验 Plan 模式完整流程
+### 练习 1：运行 Plan 模式
+
+以下代码实现了第 16 章的核心概念——Plan 模式进入/退出、只读工具限制、审批工作流。复制到 `mini-plan.ts` 后用 `npx tsx mini-plan.ts` 运行。
+
+> **源码参考：** 对应 Claude Code `src/tools/EnterPlanModeTool.ts` 和 `src/tools/ExitPlanModeV2Tool.ts` 中的 Plan 模式切换逻辑。
+
+```typescript
+// mini-plan.ts — 最小 Plan 模式（~50 行）
+// 源码参考：Claude Code src/tools/EnterPlanModeTool.ts
+
+import { writeFileSync, readFileSync, existsSync, mkdirSync } from "fs";
+import { join } from "path";
+
+type PermissionMode = "default" | "plan" | "bypassPermissions";
+type PlanChoice = "clear-and-execute" | "execute" | "keep-planning";
+
+interface PlanState { mode: PermissionMode; prePlanMode: PermissionMode | null; planFilePath: string | null; }
+
+function enterPlanMode(state: PlanState, dir: string): PlanState {
+  const path = join(dir, `plan-${Date.now()}.md`);
+  writeFileSync(path, "# Implementation Plan\n\n## Steps\n1. TBD\n");
+  return { ...state, mode: "plan", prePlanMode: state.mode, planFilePath: path };
+}
+
+function exitPlanMode(state: PlanState): PlanState {
+  return { ...state, mode: state.prePlanMode || "default", prePlanMode: null, planFilePath: null };
+}
+
+function isToolAllowed(tool: string, mode: PermissionMode): boolean {
+  if (mode !== "plan") return true;
+  return new Set(["read_file", "list_files", "grep_search"]).has(tool);
+}
+
+function approvePlan(choice: PlanChoice, state: PlanState): PlanState {
+  if (choice === "keep-planning") return state;
+  return { ...state, mode: state.prePlanMode || "default", planFilePath: choice === "clear-and-execute" ? null : state.planFilePath };
+}
+
+function main() {
+  console.log("=== Plan 模式测试 ===\n");
+  const dir = "/tmp/book-exercises/plans";
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  let state: PlanState = { mode: "default", prePlanMode: null, planFilePath: null };
+
+  console.log("1. 进入 Plan 模式:");
+  state = enterPlanMode(state, dir);
+  console.log(`  mode: ${state.mode}`);
+  console.log(`  计划文件: ${readFileSync(state.planFilePath!, "utf-8").split("\n")[0]}`);
+
+  console.log("\n2. 工具限制:");
+  ["read_file", "edit_file", "bash", "grep_search"].forEach(t =>
+    console.log(`  ${t}: ${isToolAllowed(t, state.mode) ? "✅" : "🚫"}`));
+
+  console.log("\n3. 审批工作流:");
+  state = approvePlan("execute", state);
+  console.log(`  execute → mode: ${state.mode}`);
+  state = enterPlanMode(state, dir);
+  state = approvePlan("keep-planning", state);
+  console.log(`  keep-planning → mode: ${state.mode}`);
+  state = exitPlanMode(state);
+  console.log(`  exit → mode: ${state.mode}`);
+}
+main();
+```
+
+### 练习 2：体验 Plan 模式完整流程
 
 在 Claude Code REPL 中输入一个非平凡的实现任务（如"为项目添加一个配置验证模块"），观察：
 1. EnterPlanMode 触发的条件（模型是否主动进入了 Plan 模式）

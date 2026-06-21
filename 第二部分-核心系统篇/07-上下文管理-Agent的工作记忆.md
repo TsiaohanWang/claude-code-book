@@ -3,7 +3,7 @@
 > **学习目标：**
 > 1. 理解 Agent 上下文窗口的硬约束与有效空间计算
 > 2. 掌握五级渐进式压缩策略（Tool Result 预算 → Snip → MicroCompact → Collapse → AutoCompact）的设计动机与工作机制
-> 3. 理解断路器模式如何保护系统免受级联失败
+> 3. 理解断路器模式如何保护系统免受**级联失败**（Cascading Failure——一个组件的失败导致依赖它的其他组件依次失败，形成连锁反应）
 > 4. 分析压缩提示工程的双阶段输出结构
 > 5. 能够为不同使用场景选择最优的上下文管理策略
 
@@ -74,7 +74,7 @@ graph LR
 
 自动压缩并非总是成功。网络波动、API 错误或上下文本身的结构问题都可能导致压缩失败。如果盲目重试，系统会在每个轮次都发起注定失败的 API 调用，浪费大量资源。
 
-Claude Code 引入了断路器（Circuit Breaker）机制：当连续失败次数达到 3 次（`MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES`）时，系统直接跳过后续的压缩尝试。
+Claude Code 引入了**断路器**（Circuit Breaker——分布式系统中的容错模式：当连续失败达到阈值后停止尝试，避免无效请求的雪崩效应）机制：当连续失败次数达到 3 次（`MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES`）时，系统直接跳过后续的压缩尝试。
 
 ```mermaid
 stateDiagram-v2
@@ -492,7 +492,157 @@ flowchart LR
 
 ## 实战练习
 
-**练习 1：令牌预算计算器**
+### 练习 1：运行一个最小上下文压缩管线
+
+以下代码实现了第 7 章的核心概念——有效窗口计算、五级压缩管线、断路器模式。复制到 `mini-compact.ts` 后用 `npx tsx mini-compact.ts` 运行。
+
+```typescript
+// mini-compact.ts — 最小上下文压缩管线（~100 行）
+// 核心概念：有效窗口 + 五级压缩 + 断路器
+
+// ── 有效窗口计算（对应 7.1 节） ────────────────────────
+function getEffectiveWindow(modelWindow: number, maxOutputTokens: number): number {
+  const reserved = Math.min(maxOutputTokens, 20000);
+  return modelWindow - reserved;
+}
+
+// ── 压缩级别定义 ────────────────────────────────────────
+interface Message { role: string; content: string; tokens: number; }
+
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);  // 粗略估算：1 token ≈ 4 字符
+}
+
+// Level 0: Tool Result 预算裁剪
+function toolResultBudget(messages: Message[], budget: number): Message[] {
+  return messages.map(m => {
+    if (m.role === "tool" && m.tokens > budget) {
+      const truncated = m.content.slice(0, budget * 4) + "\n... (truncated)";
+      return { ...m, content: truncated, tokens: budget };
+    }
+    return m;
+  });
+}
+
+// Level 1: Snip — 清除旧工具结果
+function snipOldResults(messages: Message[], keepRecent: number): Message[] {
+  const toolMsgs = messages.filter(m => m.role === "tool");
+  const nonToolMsgs = messages.filter(m => m.role !== "tool");
+  const toKeep = toolMsgs.slice(-keepRecent);
+  const toSnip = toolMsgs.slice(0, -keepRecent);
+  const snipped = toSnip.map(m => ({
+    ...m, content: "[Content snipped - re-read if needed]", tokens: 10,
+  }));
+  return [...snipped, ...toKeep, ...nonToolMsgs].sort((a, b) =>
+    messages.indexOf(a) - messages.indexOf(b)
+  );
+}
+
+// Level 4: AutoCompact — 全量摘要（用 LLM 压缩）
+function autoCompact(messages: Message[]): Message[] {
+  const totalTokens = messages.reduce((sum, m) => sum + m.tokens, 0);
+  const summary = `[Auto-compacted: ${messages.length} messages, ~${totalTokens} tokens condensed]\n` +
+    messages.slice(0, 3).map(m => `${m.role}: ${m.content.slice(0, 50)}...`).join("\n");
+  return [{ role: "user", content: summary, tokens: estimateTokens(summary) }];
+}
+
+// ── 断路器（对应 7.1 节） ──────────────────────────────
+class CircuitBreaker {
+  private failures = 0;
+  private readonly maxFailures: number;
+  constructor(maxFailures = 3) { this.maxFailures = maxFailures; }
+  canTry() { return this.failures < this.maxFailures; }
+  recordSuccess() { this.failures = 0; }
+  recordFailure() { this.failures++; }
+  getState() { return this.failures >= this.maxFailures ? "OPEN" : "CLOSED"; }
+}
+
+// ── 五级压缩管线（对应 7.3 节） ────────────────────────
+function compressionPipeline(
+  messages: Message[],
+  effectiveWindow: number,
+  breaker: CircuitBreaker,
+): { messages: Message[]; level: string } {
+  const currentTokens = messages.reduce((sum, m) => sum + m.tokens, 0);
+  const usage = currentTokens / effectiveWindow;
+
+  // Level 0: Tool Result 预算
+  if (usage > 0.5) {
+    messages = toolResultBudget(messages, 500);
+    const newTokens = messages.reduce((sum, m) => sum + m.tokens, 0);
+    if (newTokens / effectiveWindow < 0.85) return { messages, level: "L0: Tool Result Budget" };
+  }
+
+  // Level 1: Snip
+  if (usage > 0.6) {
+    messages = snipOldResults(messages, 3);
+    const newTokens = messages.reduce((sum, m) => sum + m.tokens, 0);
+    if (newTokens / effectiveWindow < 0.85) return { messages, level: "L1: Snip" };
+  }
+
+  // Level 4: AutoCompact（带断路器）
+  if (usage > 0.9 && breaker.canTry()) {
+    try {
+      messages = autoCompact(messages);
+      breaker.recordSuccess();
+      return { messages, level: "L4: AutoCompact" };
+    } catch {
+      breaker.recordFailure();
+      return { messages, level: `L4: AutoCompact FAILED (breaker: ${breaker.getState()})` };
+    }
+  }
+
+  return { messages, level: "No compression needed" };
+}
+
+// ── 主程序 ──────────────────────────────────────────────
+function main() {
+  const modelWindow = 200000;
+  const maxOutput = 16384;
+  const effectiveWindow = getEffectiveWindow(modelWindow, maxOutput);
+
+  console.log(`模型窗口: ${modelWindow} tokens`);
+  console.log(`有效窗口: ${effectiveWindow} tokens (${(effectiveWindow / modelWindow * 100).toFixed(1)}%)\n`);
+
+  // 模拟一个逐渐膨胀的对话
+  const messages: Message[] = [];
+  const breaker = new CircuitBreaker(3);
+
+  // 模拟 20 轮对话，每轮增加 ~8000 tokens
+  for (let turn = 1; turn <= 20; turn++) {
+    messages.push({ role: "user", content: `Turn ${turn}: Please read file_${turn}.ts`, tokens: 200 });
+    messages.push({ role: "assistant", content: `I'll read file_${turn}.ts for you.`, tokens: 150 });
+    messages.push({ role: "tool", content: `// file_${turn}.ts content... ${"x".repeat(30000)}`, tokens: 7500 });
+    messages.push({ role: "assistant", content: `The file contains ${turn * 10} lines of code.`, tokens: 100 });
+
+    const totalTokens = messages.reduce((sum, m) => sum + m.tokens, 0);
+    const usage = totalTokens / effectiveWindow;
+
+    if (usage > 0.5 || turn === 20) {
+      const { messages: compressed, level } = compressionPipeline([...messages], effectiveWindow, breaker);
+      const compressedTokens = compressed.reduce((sum, m) => sum + m.tokens, 0);
+      console.log(`Turn ${turn}: ${(usage * 100).toFixed(1)}% → ${level}`);
+      console.log(`  Before: ${totalTokens} tokens → After: ${compressedTokens} tokens (saved ${totalTokens - compressedTokens})`);
+      console.log(`  Breaker: ${breaker.getState()}\n`);
+
+      if (level !== "No compression needed") {
+        messages.length = 0;
+        messages.push(...compressed);
+      }
+    }
+  }
+}
+
+main();
+```
+
+**运行后观察：**
+- 有效窗口 = 200,000 - 16,384 = 183,616 tokens
+- 五级压缩如何从轻量到重量依次触发
+- 断路器如何在连续失败后停止重试
+- 压缩前后 token 数量的变化
+
+### 练习 2：令牌预算计算器
 
 假设你的模型上下文窗口为 200,000 令牌，最大输出令牌为 16,384 令牌。请计算：
 - 有效上下文窗口大小
@@ -502,16 +652,7 @@ flowchart LR
 
 > *进阶挑战：* 如果对话中包含一个消耗 50,000 令牌的系统提示，你的有效对话空间还剩多少？这对压缩策略的选择有什么影响？
 
-**练习 2：设计自定义压缩策略**
-
-为以下场景设计最合适的压缩级别组合：
-- 场景 A：代码审查会话，用户连续工作 2 小时，包含大量文件读取结果
-- 场景 B：自动化 CI/CD Agent，长时间运行的任务管道
-- 场景 C：交互式教学会话，需要保持早期对话的精确引用
-
-> *进阶挑战：* 为每个场景设计一个 PreCompact 钩子指令，指导摘要保留哪些关键信息。
-
-**练习 3：断路器行为分析**
+### 练习 3：断路器行为分析
 
 追踪以下事件序列中断路器状态的变化：
 1. 压缩成功（consecutiveFailures = ?）
@@ -522,7 +663,7 @@ flowchart LR
 
 > *进阶挑战：* 如果断路器阈值从 3 改为 5，在 API 故障率为 30% 的情况下，每天会多浪费多少次 API 调用？（提示：参考原文中 1,279 个会话的数据）
 
-**练习 4：上下文压缩实战**
+### 练习 4：上下文压缩实战
 
 使用 Claude Code 开始一个长对话会话：
 1. 让 Agent 连续读取 8-10 个文件
@@ -531,12 +672,6 @@ flowchart LR
 4. 观察压缩前后的令牌数量对比
 
 > *进阶挑战：* 尝试在压缩前用 Snip 工具手动清除不需要的工具结果，对比"先 Snip 再 compact"与"直接 compact"的效果差异。
-
-**练习 5：跨章节综合分析**
-
-结合第 2 章（对话循环）和第 10 章（Fork 模式），分析以下问题：
-- 对话循环的预处理管线中，上下文压缩在哪一步执行？为什么在这个位置？
-- Fork 创建子 Agent 时，如果父 Agent 的上下文已经被压缩过，子 Agent 会继承什么？这对子 Agent 的行为有什么影响？
 
 ---
 

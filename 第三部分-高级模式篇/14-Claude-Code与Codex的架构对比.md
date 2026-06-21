@@ -20,7 +20,7 @@ Claude Code 和 Codex 是当前最具代表性的两个 AI 编程 Agent。它们
 
 ---
 
-## 14.2 控制平面：动态组装 vs 结构化片段
+## 14.2 **控制平面**（Control Plane——系统中负责决策和管理的部分，与负责实际数据处理的"数据平面"相对）：动态组装 vs 结构化片段
 
 ### Claude Code 的动态组装线
 
@@ -124,20 +124,21 @@ match decision:
     deny:  reject(reason)
     ask:   route_to(coordinator | swarm | interactive)
 
-// Codex 策略评估
+// Codex 策略评估 (codex-rs/execpolicy/src/decision.rs)
 policy = PolicyParser.parse(source)
 for rule in policy.rules:
     eval = rule.evaluate(exec_command { cmd, workdir, shell, ... })
-    if eval.matches: return Decision::{Allow | Deny | RequestPermissions}
-return Decision::default
+    if eval.matches: return Decision::{Allow | Prompt | Forbidden}
+return Decision::default  // Prompt (需要用户确认)
 ```
 
 | 维度 | Claude Code | Codex |
 |------|-------------|-------|
+| 决策类型 | allow / deny / ask | Allow / Prompt / Forbidden |
 | 决策位置 | 调用点附近（上下文敏感） | 独立策略引擎（规则驱动） |
 | 可移植性 | 中（规则嵌入运行时逻辑） | 高（策略可解析、可移植） |
 | 团队治理 | 中（需要理解运行时） | 高（策略文件可 PR 审查） |
-| 灵活性 | 高（运行时可动态调整） | 中（修改策略需要重新部署 |
+| 灵活性 | 高（运行时可动态调整） | 中（修改策略需要重新部署） |
 
 ---
 
@@ -147,7 +148,7 @@ return Decision::default
 
 Claude Code 将技能、钩子、权限和工具提示编织成一条情境治理链，让本地规则搭载主循环。CLAUDE.md 是本地公告板，与记忆和技能配对，适合注册常识、禁忌和本地规则。
 
-钩子系统在 26 个生命周期节点提供扩展点，通过 JSON 输入输出协议与 Harness 交互。灵活性很高，但规则的来源和优先级有时不够显式。
+钩子系统在 31 个生命周期节点提供扩展点，通过 JSON 输入输出协议与 Harness 交互。灵活性很高，但规则的来源和优先级有时不够显式。
 
 ### Codex：结构化资产
 
@@ -250,3 +251,82 @@ Codex 的主轴：
 4. **它们真正汇聚，但走不同的路。** 两者都承认模型不可靠、Harness 是秩序来源。但一个信任运行时纪律更多，一个信任显式控制层更多。
 
 5. **选择取决于你的主要矛盾。** "长会话失控"→ 学 Claude Code。"规则散乱"→ 学 Codex。从零开始 → 先选一个矛盾，再搭骨架。
+
+---
+
+## 实战练习
+
+### 练习 1：运行两种 Prompt 组装方式的对比
+
+以下代码实现了第 14 章的核心对比——Claude Code 的动态 Prompt 组装 vs Codex 的结构化片段。复制到 `mini-comparison.ts` 后用 `npx tsx mini-comparison.ts` 运行。
+
+> **源码参考：** Claude Code 动态组装对应 `src/utils/systemPrompt.ts` 中的 `buildEffectiveSystemPrompt()`；Codex 片段对应 `codex-cli/src/instructions/fragment.rs` 中的 `ContextualUserFragmentDefinition`。
+
+```typescript
+// mini-comparison.ts — Claude Code vs Codex 架构对比（~60 行）
+// 源码参考：Claude Code src/utils/systemPrompt.ts, Codex codex-cli/src/instructions/fragment.rs
+
+// ── Claude Code: 动态 Prompt 组装 ────────────────────────
+function buildClaudeCodePrompt(config: { cwd: string; tools: string[]; claudeMd: string; memory: string }): string {
+  return [
+    "You are Claude Code, an interactive coding agent.",
+    `Working directory: ${config.cwd}`,
+    `Available tools: ${config.tools.join(", ")}`,
+    config.claudeMd ? `\n# Project Instructions\n${config.claudeMd}` : "",
+    config.memory ? `\n# Memory\n${config.memory}` : "",
+  ].filter(Boolean).join("\n");
+}
+
+// ── Codex: 结构化片段 ────────────────────────────────────
+interface Fragment { marker: string; source: string; content: string; }
+function buildCodexPrompt(fragments: Fragment[]): string {
+  return fragments.map(f => `<${f.marker} source="${f.source}">\n${f.content}\n</${f.marker}>`).join("\n\n");
+}
+
+// ── 权限模型对比 ─────────────────────────────────────────
+function claudeCodePermission(tool: string, mode: string, rules: { allow: string[]; deny: string[] }): string {
+  if (rules.deny.some(r => tool.includes(r))) return "deny";
+  if (rules.allow.some(r => tool.includes(r))) return "allow";
+  if (mode === "bypass") return "allow";
+  return "ask";
+}
+
+interface PolicyRule { action: "allow" | "deny"; pattern: string; }
+function codexPermission(tool: string, policy: PolicyRule[]): string {
+  for (const rule of policy) { if (tool.match(new RegExp(rule.pattern.replace("*", ".*")))) return rule.action; }
+  return "ask";
+}
+
+function main() {
+  console.log("=== Claude Code vs Codex 对比测试 ===\n");
+
+  console.log("1. Prompt 组装方式:");
+  const ccPrompt = buildClaudeCodePrompt({ cwd: "/home/user/project", tools: ["read_file", "edit_file", "bash"], claudeMd: "Use TypeScript strict mode.", memory: "User prefers concise output." });
+  console.log(`  Claude Code: ${ccPrompt.split("\n").length} 行, 动态组装`);
+  const codexPrompt = buildCodexPrompt([
+    { marker: "AGENTS_MD", source: "project", content: "Use TypeScript strict mode." },
+    { marker: "USER_INSTRUCTIONS", source: "user", content: "User prefers concise output." },
+  ]);
+  console.log(`  Codex: ${codexPrompt.split("\n").length} 行, 结构化片段`);
+
+  console.log("\n2. 权限模型:");
+  console.log(`  Claude Code (bash, default): ${claudeCodePermission("bash", "default", { allow: ["read_file"], deny: ["npm publish"] })} — 运行时决策`);
+  console.log(`  Codex (bash_rm_*): ${codexPermission("bash_rm_rf", [{ action: "deny", pattern: "bash_rm*" }])} — 策略评估`);
+
+  console.log("\n3. 收敛点（两者都同意）:");
+  ["模型不可靠 → harness 提供秩序", "工具必须被约束 → 调度纪律", "长会话需要状态治理", "多智能体需要角色划分"].forEach(c => console.log(`  ✅ ${c}`));
+}
+main();
+```
+
+### 练习 2：选择你的主要矛盾
+
+根据你的团队情况，判断应该优先学习哪个系统：
+
+| 你的团队情况 | 主要矛盾 | 优先学习 |
+|------------|---------|---------|
+| 有 Agent 原型，长会话经常崩溃 | 系统活不够久 | ? |
+| 规则散落各处，没人知道约束在哪 | 系统越来越难治理 | ? |
+| 从零开始，没有成熟系统 | ? | 选一个矛盾先解决 |
+
+**参考答案：** 1→Claude Code（先稳定循环）；2→Codex（先让规则显式化）；3→根据第一阶段风险选择

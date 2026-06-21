@@ -97,7 +97,7 @@ The coverage of these six rendering methods is noteworthy: it spans the entire "
 
 ### The buildTool Factory Function
 
-`buildTool` is the standard factory function for creating tools. It accepts a partial tool definition and automatically fills in safe default values. These defaults follow the "fail-closed" principle: security-related methods (such as concurrency safety determination, read-only determination) default to false, and tools must explicitly declare themselves safe to enjoy optimizations like concurrency.
+`buildTool` is the standard factory function for creating tools. It accepts a partial tool definition and automatically fills in safe default values. These defaults follow the "fail-closed" (security design principle: default to the strictest restriction when encountering unknown situations, such as refusing to execute) principle: security-related methods (such as concurrency safety determination, read-only determination) default to false, and tools must explicitly declare themselves safe to enjoy optimizations like concurrency.
 
 This design philosophy can be understood through an analogy: in airport security, the default assumption is that all luggage needs to be inspected (fail-closed), and only specially certified passengers (such as diplomats) can use the fast track. If it were the other way around -- defaulting to pass-through and only intercepting when problems are found (fail-open) -- then any missed check could cause a security incident.
 
@@ -207,7 +207,7 @@ These three tools constitute Claude Code's complete file operation capability se
 - **Why not line numbers?** Line numbers are fragile -- if another tool (or the user) modifies the file between reading and editing, the line numbers may have shifted, causing edits to be applied to the wrong location. More critically, when the model needs multiple edits to the same file in one turn, the first edit causes all subsequent line numbers to shift.
 - **Why not AST?** AST editing is theoretically elegant but practically infeasible -- Claude Code needs to support dozens of languages, maintaining an AST parser for each is prohibitively expensive. More critically: **files with syntax errors are precisely the files that most need editing**, but AST parsers refuse to parse when they encounter syntax errors.
 - **Why not unified diff?** LLMs perform poorly when generating strict formats (precise hunk headers, `+`/`-`/space prefixes). A single character deviation causes the entire patch to fail.
-- **Why exact string matching?** String matching is idempotent -- as long as the target string exists in the file, the edit can be correctly located. Even if the file has been partially modified, as long as the target fragment hasn't been touched, the edit is safe.
+- **Why exact string matching?** String matching is **idempotent** (executing once produces the same effect as executing multiple times) -- as long as the target string exists in the file, the edit can be correctly located. Even if the file has been partially modified, as long as the target fragment hasn't been touched, the edit is safe.
 
 **Anti-hallucination property:** FileEditTool's most underrated advantage is its anti-hallucination capability. Consider this scenario: the model "remembers" a `handleError()` function in the file, but it was actually renamed to `processError()` in a previous refactor. With search-and-replace, providing `old_string: "function handleError()"` fails directly ("String to replace not found in file"), and the model re-reads the file to discover the correct name. With full-file rewrite, the model might write a complete file containing `handleError()`, overwriting the correct `processError()` -- and this error is completely silent with no error reported.
 
@@ -375,50 +375,171 @@ Returning to the dialog main loop, tool execution state is tightly integrated wi
 
 ## Practical Exercises
 
-**Exercise 1: Implement a Custom Tool**
+### Exercise 1: Run a Minimal Tool System
 
-Use the `buildTool` factory function to create a simple tool. Requirements:
-- Define a Zod schema containing a `path` field (string type)
-- Implement the `call` method that returns file information for the specified path
-- Correctly mark `isReadOnly` and `isConcurrencySafe`
-- Implement `renderToolUseMessage` and `renderToolResultMessage`
+The following code implements the core concepts of Chapter 3 — Tool five-element protocol, buildTool factory function, and concurrency partitioning algorithm. Copy to `mini-tools.ts` and run with `npx tsx mini-tools.ts`.
 
-Compare your implementation with FileReadTool to understand the role of `buildTool` default values.
+```typescript
+// mini-tools.ts — Minimal tool system (~120 lines)
+// Core concepts: Tool interface + buildTool factory + concurrency partitioning
 
-**Discussion Question:** Should your custom tool's `isConcurrencySafe` be marked as true or false? If marked incorrectly (a read-only tool marked as false, or a write tool marked as true), what problems would each case cause?
+import { z } from "zod";
 
-**Exercise 2: Analyze Concurrency Partitioning Strategy**
+// Tool five-element protocol (Section 3.1)
+interface Tool<I extends Record<string, unknown>, O> {
+  name: string;
+  inputSchema: z.ZodType<I>;
+  isReadOnly: (input: I) => boolean;
+  isConcurrencySafe: (input: I) => boolean;
+  call: (input: I) => Promise<O>;
+  render: (input: I, output: O) => string;
+}
 
-Given the following tool call sequence:
+// buildTool factory (Section 3.1)
+function buildTool<I extends Record<string, unknown>, O>(
+  def: Partial<Tool<I, O>> & Pick<Tool<I, O>, "name" | "inputSchema" | "call">,
+): Tool<I, O> {
+  return {
+    ...def,
+    isReadOnly: def.isReadOnly ?? (() => false),        // fail-closed default
+    isConcurrencySafe: def.isConcurrencySafe ?? (() => false),
+    render: def.render ?? ((input, output) => `${def.name}: ${JSON.stringify(output).slice(0, 80)}`),
+  };
+}
+
+// Concrete tool implementations
+const ReadTool = buildTool({
+  name: "read_file",
+  inputSchema: z.object({ path: z.string().describe("File path") }),
+  isReadOnly: () => true,
+  isConcurrencySafe: () => true,
+  call: async (input) => {
+    const fs = await import("fs");
+    return { content: fs.readFileSync(input.path, "utf-8").slice(0, 500) };
+  },
+});
+
+const BashTool = buildTool({
+  name: "bash",
+  inputSchema: z.object({ command: z.string().describe("Shell command") }),
+  isReadOnly: () => false,
+  isConcurrencySafe: () => false,
+  call: async (input) => {
+    const { execSync } = await import("child_process");
+    return { output: execSync(input.command, { encoding: "utf-8", timeout: 5000 }).slice(0, 500) };
+  },
+});
+
+const GrepTool = buildTool({
+  name: "grep",
+  inputSchema: z.object({ pattern: z.string().describe("Search pattern") }),
+  isReadOnly: () => true,
+  isConcurrencySafe: () => true,
+  call: async (input) => {
+    const { execSync } = await import("child_process");
+    try {
+      return { matches: execSync(`grep -r "${input.pattern}" . --include="*.ts" -l`, { encoding: "utf-8", timeout: 5000 }).trim() };
+    } catch { return { matches: "(no matches)" }; }
+  },
+});
+
+// Concurrency partitioning algorithm (Section 3.4)
+interface ToolCall { id: string; tool: Tool<any, any>; input: Record<string, unknown>; }
+
+function partitionToolCalls(calls: ToolCall[]): ToolCall[][] {
+  const batches: ToolCall[][] = [];
+  let currentBatch: ToolCall[] = [];
+  let currentSafe = false;
+  for (const call of calls) {
+    const safe = call.tool.isConcurrencySafe(call.input);
+    if (currentBatch.length === 0) {
+      currentBatch = [call]; currentSafe = safe;
+    } else if (safe && currentSafe) {
+      currentBatch.push(call);
+    } else {
+      batches.push(currentBatch); currentBatch = [call]; currentSafe = safe;
+    }
+  }
+  if (currentBatch.length > 0) batches.push(currentBatch);
+  return batches;
+}
+
+async function main() {
+  const calls: ToolCall[] = [
+    { id: "1", tool: GrepTool, input: { pattern: "TODO" } },
+    { id: "2", tool: ReadTool, input: { path: "package.json" } },
+    { id: "3", tool: BashTool, input: { command: "echo hello" } },
+    { id: "4", tool: ReadTool, input: { path: "tsconfig.json" } },
+    { id: "5", tool: GrepTool, input: { pattern: "import" } },
+  ];
+
+  const batches = partitionToolCalls(calls);
+  console.log("=== Concurrency Partitioning ===");
+  batches.forEach((batch, i) => {
+    const names = batch.map(c => c.tool.name);
+    const safe = batch.every(c => c.tool.isConcurrencySafe(c.input));
+    console.log(`  Batch ${i + 1} [${safe ? "parallel" : "serial"}]: ${names.join(", ")}`);
+  });
+}
+
+main().catch(console.error);
 ```
-[GlobTool(*.ts), GrepTool(pattern), BashTool(npm test), FileReadTool(a.ts), FileEditTool(a.ts), GlobTool(*.json)]
+
+**After running, observe:**
+- How partitioning divides `[Grep, Read, Bash, Read, Grep]` into 3 batches
+- Read-only tools (Grep, Read) are merged into the same parallel batch
+- The Bash tool with side effects is isolated as a serial batch
+
+**Modification experiments:**
+1. Change GrepTool's `isConcurrencySafe` to `false`, observe partitioning changes
+2. Add a `WriteTool` (`isReadOnly: () => false`), observe how it gets isolated
+
+### Exercise 2: Manually Trace the Concurrency Partitioning Algorithm
+
+Given the following tool call sequence, manually simulate `partitionToolCalls`:
+
+```
+[Glob(*.ts), Grep(pattern), Bash(npm test), Read(a.ts), Edit(a.ts), Glob(*.json)]
 ```
 
-Manually execute the logic of `partitionToolCalls`, and draw the batch partitioning result. Then consider: why can't FileEditTool and GlobTool be placed in the same concurrent batch?
+Record the `currentSafe` and `currentBatch` state at each step. The correct answer:
 
-**Detailed Analysis:** Draw the safety marking for each tool, then step through the partitioning algorithm's decision process. The final answer should be:
+| Batch | Tools | Safe | Execution |
+|-------|-------|------|-----------|
+| 1 | Glob, Grep | both true | Parallel |
+| 2 | Bash | false | Serial |
+| 3 | Read | true | Serial (previous batch was unsafe) |
+| 4 | Edit | false | Serial |
+| 5 | Glob | true | Serial (previous batch was unsafe) |
 
+**Key insight:** Read(a.ts) is itself concurrency-safe, but because the previous batch was unsafe Bash, it cannot retroactively merge into Batch 1. This is the "ordering guarantee" — result output order must match request order.
+
+### Exercise 3: Compare search-and-replace vs Full-File Rewrite
+
+The following code demonstrates FileEditTool's anti-hallucination property (Section 3.3):
+
+```typescript
+const fileContent = `function processError(err: Error) {\n  console.log(err.message);\n}\n`;
+const hallucinatedOldString = "function handleError(err: Error)";
+
+function searchAndReplace(content: string, oldStr: string, newStr: string): string {
+  if (!content.includes(oldStr)) throw new Error(`Not found: "${oldStr.slice(0, 40)}..."`);
+  return content.replace(oldStr, newStr);
+}
+
+console.log("=== search-and-replace ===");
+try {
+  searchAndReplace(fileContent, hallucinatedOldString, "function fixed() {}");
+} catch (err: any) {
+  console.log(`  ✅ Hallucination detected: ${err.message}`);
+}
+
+console.log("\n=== full file rewrite ===");
+console.log(`  ❌ Hallucination NOT detected — file silently overwritten`);
+console.log(`  Original had processError, rewrite has handleError — data loss!`);
 ```
-Batch 1 (Concurrency Safe): [GlobTool(*.ts), GrepTool(pattern)]   -- Parallel execution
-Batch 2 (Not Safe):         [BashTool(npm test)]                   -- Serial execution
-Batch 3 (Not Safe):         [FileReadTool(a.ts)]                   -- Serial execution (affected by Batch 2, cannot merge into Batch 1)
-Batch 4 (Not Safe):         [FileEditTool(a.ts)]                   -- Serial execution
-Batch 5 (Concurrency Safe): [GlobTool(*.json)]                     -- Can be parallel (but only one tool)
-```
 
-**Exercise 3: Trace the StreamingToolExecutor Lifecycle**
-
-Set breakpoints at the tool enqueue, tool execution, and result retrieval stages of the StreamingToolExecutor. Send a request that triggers multiple parallel tool calls (e.g., "search for all TODO comments and read the related files"), and observe how tool states transition from queued to executing to completed to yielded, and how progress messages are yielded immediately.
-
-**Extended Observation:** During tool execution, press Ctrl+C and observe how the cancellation signal propagates from the user to each tool. Note how the hierarchical cancellation controllers ensure that only the currently executing tools are canceled, while the results of already completed tools are unaffected.
-
-**Exercise 4: Evaluate the Performance Impact of Deferred Discovery**
-
-If your environment has an MCP server connected, observe the difference in API call token consumption under the following two conditions:
-- Deferred discovery disabled (all tool schemas in the initial prompt)
-- Deferred discovery enabled (only tool name list in the initial prompt)
-
-Record the input token count difference in both cases, and calculate how many tokens deferred discovery saves you.
+**Core conclusion:** search-and-replace's `old_string` must exactly match file content, otherwise it throws — this is the "anti-hallucination" mechanism.
 
 ---
 

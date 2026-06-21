@@ -114,7 +114,7 @@ The market is saturated with guides on "how to write better prompts" and "how to
 | 06 | [The Memory System — Agent's Long-Term Memory](Part-2-Core-Systems/06-The-Memory-System-Agent-Long-Term-Memory.md) | Four closed memory types; "only save non-derivable info"; MEMORY.md index; Fork memory mechanism |
 | 07 | [Context Management — Agent's Working Memory](Part-2-Core-Systems/07-Context-Management-Agent-Working-Memory.md) | Effective window formula; four-level compression (Snip→MicroCompact→Collapse→AutoCompact); circuit breaker |
 | 08 | [Error Recovery — Agent's Resilience](Part-2-Core-Systems/08-Error-Recovery-Agent-Resilience.md) | `prompt_too_long` layered recovery; `max_output_tokens` continuation-first; reactive compact anti-death-spiral; circuit breaker; interrupt ledger closure |
-| 09 | [The Hook System — Agent's Lifecycle Extension Points](Part-2-Core-Systems/09-The-Hook-System-Agent-Lifecycle-Extension-Points.md) | Five hook types; 26 lifecycle events; JSON response protocol; six-layer priority; three-layer security |
+| 09 | [The Hook System — Agent's Lifecycle Extension Points](Part-2-Core-Systems/09-The-Hook-System-Agent-Lifecycle-Extension-Points.md) | Five hook types; 31 lifecycle events; JSON response protocol; six-layer priority; three-layer security |
 
 ### Part 3. Advanced Patterns — Composition & Extension
 

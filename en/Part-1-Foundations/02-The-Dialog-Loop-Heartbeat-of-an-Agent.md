@@ -395,38 +395,209 @@ Each continue path carefully constructs a new state object, ensuring different r
 
 ## Hands-On Exercises
 
-**Exercise 1: Trace a Complete Tool Call Flow**
+### Exercise 1: Run a Minimal Agent Loop
 
-Add logging at the following key points in the dialog main loop:
-- When a request starts (after the stream_request_start event is emitted)
-- When a tool call block is detected (when the first tool_use block arrives)
-- When tool execution begins (when runTools or StreamingToolExecutor is called)
-- When the next round's state is constructed (before continue)
+The following code implements the core concepts of Chapter 2 — AsyncGenerator-driven Agent loop, dependency injection, immutable state flow, and ten termination reasons. Copy to `mini-loop.ts` and run with `npx tsx mini-loop.ts` (requires `ANTHROPIC_API_KEY` environment variable).
 
-Send Claude Code a request that requires tool calling (such as "read the package.json in the current directory"), and observe how messages flow from the API through tool execution and back into the next API call.
+```typescript
+// mini-loop.ts — Minimal Agent loop (~80 lines)
+// Core concepts: AsyncGenerator + DI + immutable state + termination reasons
 
-**Extended Reflection:** If you send three consecutive requests requiring tool calls, observe how the turn count increments. Try pressing Ctrl+C during tool execution and observe the cleanup logic of the `aborted_tools` termination path.
+import Anthropic from "@anthropic-ai/sdk";
 
-**Exercise 2: Simulate a max_output_tokens Recovery**
+interface LoopDeps {
+  callModel: (msgs: Message[]) => Promise<Anthropic.RawMessageStreamEvent[]>;
+  uuid: () => string;
+}
 
-In a test environment, inject custom dependencies so that the model calling function returns an assistant message with truncated output. Observe how the loop skips the first yield (the withheld mechanism), attempts to increase the token limit, and finally surfaces the error after retries are exhausted.
+type Message = Anthropic.MessageParam;
+type State = { messages: Message[]; turnCount: number };
+type Terminal = { reason: string };
 
-**Extended Reflection:** Modify the truncation count threshold and observe the switching conditions between the escalate and recovery paths. What happens if truncation occurs exactly inside a tool call block (the tool name is only half-output)? How does the system handle this?
+const tools: Anthropic.Tool[] = [{
+  name: "read_file",
+  description: "Read a file's contents",
+  input_schema: {
+    type: "object" as const,
+    properties: { path: { type: "string" } },
+    required: ["path"],
+  },
+}];
 
-**Exercise 3: Understanding the Value of Dependency Injection**
+async function executeTool(name: string, input: Record<string, unknown>): Promise<string> {
+  if (name === "read_file") {
+    const fs = await import("fs");
+    return fs.readFileSync(input.path as string, "utf-8");
+  }
+  return `Unknown tool: ${name}`;
+}
 
-Reflection: If the model calling function were hard-coded directly in the loop, how many mocks would tests need to cover the various branches of the main loop? Compare this with the current dependency injection approach and evaluate its impact on test maintainability.
+function defaultDeps(client: Anthropic): LoopDeps {
+  return {
+    callModel: async (msgs) => {
+      const stream = client.messages.stream({
+        model: "claude-sonnet-4-20250514", max_tokens: 4096,
+        system: "You are a helpful coding assistant. Use tools when needed.",
+        messages: msgs, tools,
+      });
+      const events: Anthropic.RawMessageStreamEvent[] = [];
+      for await (const event of stream) events.push(event);
+      return events;
+    },
+    uuid: () => crypto.randomUUID(),
+  };
+}
 
-**Specific Estimation:** Suppose the main loop has 7 Continue paths and 10 termination reasons. Without dependency injection, testing each branch would require: (a) intercepting module-level API calls, (b) controlling the compression function's behavior, (c) fixing UUID generation. Estimate the total amount of mock boilerplate code, then consider how much maintenance work these mocks would need when module structure changes.
+async function* agentLoop(
+  userInput: string, deps: LoopDeps, maxTurns = 10,
+): AsyncGenerator<string, Terminal, void> {
+  let state: State = { messages: [{ role: "user", content: userInput }], turnCount: 0 };
 
-**Exercise 4: Context Compression Pipeline in Practice**
+  while (true) {
+    if (state.turnCount >= maxTurns) return { reason: `max_turns (${state.turnCount})` };
+    yield `── Turn ${state.turnCount + 1} ──\n`;
 
-Send Claude Code a series of requests that require substantial context (such as "read this large file, then generate documentation based on it, then run tests"), and observe how the compression pipeline is triggered. Note the following clues:
-- When Snip compression is triggered (sign that tool results are being truncated)
-- When Autocompact is triggered (sign that conversation history is being summarized)
-- Whether the model's reasoning ability is affected after compression
+    const events = await deps.callModel(state.messages);
+    const assistantBlocks: Anthropic.ContentBlock[] = [];
+    const toolUses: Anthropic.ToolUseBlock[] = [];
 
-> **Cross-Reference:** The detailed implementation of the context compression pipeline will be analyzed in depth in Part 2's core chapters, including cache-aware compression strategies and context collapse granularity control.
+    for (const event of events) {
+      if (event.type === "content_block_start") {
+        assistantBlocks.push(event.content_block);
+        if (event.content_block.type === "tool_use") {
+          toolUses.push(event.content_block);
+          yield `  🔧 Tool: ${event.content_block.name}(${JSON.stringify(event.content_block.input)})\n`;
+        }
+      }
+    }
+
+    if (toolUses.length === 0) {
+      const text = assistantBlocks.filter((b): b is Anthropic.TextBlock => b.type === "text").map(b => b.text).join("");
+      yield `  ✅ ${text}\n`;
+      return { reason: "completed" };
+    }
+
+    const toolResults: Anthropic.ToolResultBlockParam[] = [];
+    for (const tu of toolUses) {
+      try {
+        const result = await executeTool(tu.name, tu.input as Record<string, unknown>);
+        toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: result.slice(0, 2000) });
+        yield `  📄 Result: ${result.slice(0, 100)}...\n`;
+      } catch (err: any) {
+        toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: `Error: ${err.message}`, is_error: true });
+        yield `  ❌ Error: ${err.message}\n`;
+      }
+    }
+
+    state = {
+      messages: [...state.messages, { role: "assistant", content: assistantBlocks }, { role: "user", content: toolResults }],
+      turnCount: state.turnCount + 1,
+    };
+  }
+}
+
+async function main() {
+  const client = new Anthropic();
+  console.log("=== Real API ===");
+  const gen = agentLoop("Read the file package.json", defaultDeps(client));
+  for await (const event of gen) process.stdout.write(event);
+  console.log(`Terminal: ${JSON.stringify(gen.return())}\n`);
+
+  console.log("=== Test (no API) ===");
+  const testDeps: LoopDeps = {
+    callModel: async () => [{ type: "content_block_start", index: 0, content_block: { type: "text", text: "Test response." } as Anthropic.TextBlock }],
+    uuid: () => "test-uuid",
+  };
+  const testGen = agentLoop("test input", testDeps);
+  for await (const event of testGen) process.stdout.write(event);
+  console.log(`Terminal: ${JSON.stringify(testGen.return())}`);
+}
+
+main().catch(console.error);
+```
+
+**After running, observe:**
+- How `yield`-ed events display in real-time (streaming output)
+- How `while(true)` + `continue` drives multi-turn loops
+- How the state object is entirely replaced each turn (immutability)
+- How tool results are backfilled into the next turn's message history
+
+**Modification experiments:**
+1. Change `maxTurns` to 2, observe the `max_turns` termination path
+2. Throw an exception in tool execution, observe `is_error` handling
+3. Replace `testDeps` to make the model return `tool_use`, observe multi-turn loop
+
+### Exercise 2: Implement the Circuit Breaker Pattern
+
+The following code implements the circuit breaker pattern discussed in Chapters 2 and 8. Copy to `circuit-breaker.ts` and run.
+
+```typescript
+// circuit-breaker.ts — Circuit breaker pattern (~40 lines)
+
+type CircuitState = "closed" | "open" | "half-open";
+
+class CircuitBreaker {
+  private state: CircuitState = "closed";
+  private consecutiveFailures = 0;
+  private readonly threshold: number;
+  constructor(threshold = 3) { this.threshold = threshold; }
+
+  async execute<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.state === "open") throw new Error("Circuit OPEN — skipping");
+    try {
+      const result = await fn();
+      this.consecutiveFailures = 0;
+      this.state = "closed";
+      return result;
+    } catch (err) {
+      this.consecutiveFailures++;
+      if (this.consecutiveFailures >= this.threshold) {
+        this.state = "open";
+        console.log(`  ⚡ Circuit OPEN after ${this.consecutiveFailures} failures`);
+      }
+      throw err;
+    }
+  }
+  getState() { return this.state; }
+  reset() { this.state = "closed"; this.consecutiveFailures = 0; }
+}
+
+async function main() {
+  const breaker = new CircuitBreaker(3);
+  let callCount = 0;
+  const fakeCompact = async () => {
+    callCount++;
+    if (callCount <= 5) throw new Error(`Compact failed (#${callCount})`);
+    return "Compacted!";
+  };
+
+  for (let i = 0; i < 6; i++) {
+    try {
+      const result = await breaker.execute(fakeCompact);
+      console.log(`  Attempt ${i + 1}: ${result} (${breaker.getState()})`);
+    } catch (err: any) {
+      console.log(`  Attempt ${i + 1}: ${err.message} (${breaker.getState()})`);
+    }
+  }
+
+  breaker.reset();
+  console.log("\nAfter reset:");
+  try {
+    console.log(`  Retry: ${await breaker.execute(fakeCompact)} (${breaker.getState()})`);
+  } catch (err: any) {
+    console.log(`  Retry: ${err.message} (${breaker.getState()})`);
+  }
+}
+main();
+```
+
+### Exercise 3: Trace Claude Code's Actual Dialog Loop
+
+If you have Claude Code installed, start it in the terminal and send a request requiring tool calls (e.g., "read the package.json in the current directory"). Observe:
+
+1. The model first outputs thinking text (`thinking` block), then appends tool calls (`tool_use` block) — this corresponds to stage three's "mixed output" in section 2.2
+2. After tool results are injected into message history, the model decides whether to continue calling tools — this corresponds to stage five's "next turn" in section 2.2
+3. Press Ctrl+C during tool execution to observe interrupt handling — this corresponds to the `aborted_tools` termination path in section 2.2
 
 ---
 

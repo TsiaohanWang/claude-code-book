@@ -128,7 +128,7 @@ match decision:
 policy = PolicyParser.parse(source)
 for rule in policy.rules:
     eval = rule.evaluate(exec_command { cmd, workdir, shell, ... })
-    if eval.matches: return Decision::{Allow | Deny | RequestPermissions}
+    if eval.matches: return Decision::{Allow | Prompt | Forbidden}
 return Decision::default
 ```
 
@@ -147,7 +147,7 @@ return Decision::default
 
 Claude Code weaves skills, hooks, permissions, and tool hints into a contextual governance chain that lets local rules ride on the main loop. CLAUDE.md is the local bulletin board, paired with memory and skills, suitable for registering common knowledge, prohibitions, and local rules.
 
-The hook system provides extension points at 26 lifecycle nodes, interacting with the harness through a JSON input/output protocol. Flexibility is high, but the origin and priority of rules are sometimes insufficiently explicit.
+The hook system provides extension points at 31 lifecycle nodes, interacting with the harness through a JSON input/output protocol. Flexibility is high, but the origin and priority of rules are sometimes insufficiently explicit.
 
 ### Codex: Structured Assets
 

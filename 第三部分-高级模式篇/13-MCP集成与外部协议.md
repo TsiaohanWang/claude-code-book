@@ -1112,7 +1112,73 @@ flowchart TD
 
 ## 实战练习
 
-### 练习 1：配置一个 stdio 类型的 MCP 服务器
+### 练习 1：运行 MCP 协议客户端
+
+以下代码实现了第 13 章的核心概念——JSON-RPC over stdio、工具发现、三段式工具命名。复制到 `mini-mcp.ts` 后用 `npx tsx mini-mcp.ts` 运行。
+
+> **源码参考：** 对应 Claude Code `src/mcp/mcpClient.ts` 中的 MCP 客户端实现和 `src/mcp/McpConnection.ts` 中的 JSON-RPC 通信。
+
+```typescript
+// mini-mcp.ts — 最小 MCP 客户端（~70 行）
+// 源码参考：Claude Code src/mcp/mcpClient.ts
+
+interface JsonRpcRequest { jsonrpc: "2.0"; id: number; method: string; params: any; }
+interface JsonRpcResponse { jsonrpc: "2.0"; id: number; result?: any; error?: { code: number; message: string }; }
+
+// Simulate MCP server
+function handleMcpRequest(req: JsonRpcRequest): JsonRpcResponse {
+  switch (req.method) {
+    case "initialize": return { jsonrpc: "2.0", id: req.id, result: { protocolVersion: "2024-11-05", capabilities: { tools: {} }, serverInfo: { name: "test-server", version: "1.0" } } };
+    case "tools/list": return { jsonrpc: "2.0", id: req.id, result: { tools: [
+      { name: "get_weather", description: "Get weather", inputSchema: { type: "object", properties: { city: { type: "string" } }, required: ["city"] } },
+      { name: "send_email", description: "Send email", inputSchema: { type: "object", properties: { to: { type: "string" } }, required: ["to"] } },
+    ]}};
+    case "tools/call": return { jsonrpc: "2.0", id: req.id, result: { content: [{ type: "text", text: `Result: sunny, 25°C` }] } };
+    default: return { jsonrpc: "2.0", id: req.id, error: { code: -32601, message: `Method not found: ${req.method}` } };
+  }
+}
+
+class McpClient {
+  private nextId = 1;
+  private tools: Map<string, any> = new Map();
+
+  async sendRequest(method: string, params: any = {}): Promise<any> {
+    const req: JsonRpcRequest = { jsonrpc: "2.0", id: this.nextId++, method, params };
+    const resp = handleMcpRequest(req);
+    if (resp.error) throw new Error(`MCP error ${resp.error.code}: ${resp.error.message}`);
+    return resp.result;
+  }
+
+  async initialize(): Promise<void> {
+    const r = await this.sendRequest("initialize");
+    console.log(`  Connected to ${r.serverInfo.name} v${r.serverInfo.version}`);
+  }
+
+  async discoverTools(): Promise<void> {
+    const { tools } = await this.sendRequest("tools/list");
+    for (const t of tools) this.tools.set(`mcp__test-server__${t.name}`, t);
+    console.log(`  Discovered ${this.tools.size} tools: ${[...this.tools.keys()].join(", ")}`);
+  }
+
+  async callTool(name: string, args: Record<string, any>): Promise<string> {
+    const result = await this.sendRequest("tools/call", { name: name.replace("mcp__test-server__", ""), arguments: args });
+    return result.content[0]?.text || "No result";
+  }
+}
+
+async function main() {
+  console.log("=== MCP 协议测试 ===\n");
+  const client = new McpClient();
+  console.log("1. Initialize:"); await client.initialize();
+  console.log("\n2. Discover tools:"); await client.discoverTools();
+  console.log("\n3. Call tool:");
+  const result = await client.callTool("mcp__test-server__get_weather", { city: "Beijing" });
+  console.log(`  ${result}`);
+}
+main();
+```
+
+### 练习 2：配置一个 stdio 类型的 MCP 服务器
 
 在项目根目录创建 `.mcp.json`：
 
