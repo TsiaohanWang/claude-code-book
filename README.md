@@ -90,6 +90,8 @@
 >
 > **系统学习？** 从头到尾，每章做练习，最后 Ch17 构建自己的 Harness（约 2–3 周）
 >
+> **想动手写代码？** 进入 [tutorials/](./tutorials/) 目录，用 Rust 从零构建 Mini Claude Code（11 章递进式教程）
+>
 > **查资料？** 直接翻 [附录 A](#appendix--参考资料速查)（模块定位）/ [B](#appendix--参考资料速查)（工具）/ [C](#appendix--参考资料速查)（功能标志）/ [D](#appendix--参考资料速查)（术语）/ [E](#appendix--参考资料速查)（检查清单）
 
 ---
