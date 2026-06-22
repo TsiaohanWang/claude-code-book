@@ -1,6 +1,5 @@
 <div align="center">
 
-**[English](en/README.md)** | **中文**
 
 # 御舆：解码 Agent Harness
 
@@ -30,7 +29,6 @@
 [![GitHub Forks](https://img.shields.io/github/forks/lintsinghua/claude-code-book?style=flat-square&logo=github&label=Forks)](https://github.com/lintsinghua/claude-code-book/network/members)
 [![License](https://img.shields.io/badge/license-CC%20BY--NC--SA%204.0-lightgrey?style=flat-square)](LICENSE)
 [![中文](https://img.shields.io/badge/语言-中文-red?style=flat-square)](./)
-[![English](https://img.shields.io/badge/lang-English-blue?style=flat-square)](en/README.md)
 [![Last Commit](https://img.shields.io/github/last-commit/lintsinghua/claude-code-book?style=flat-square)](https://github.com/lintsinghua/claude-code-book/commits/main)
 
 <br/>
@@ -66,7 +64,6 @@
 
 | 指标 | 数量 |
 |------|------|
-| 全书字数 | 50 万字（中文）/ 90K+ words（English） |
 | 正文章节 | 20 章 + 5 篇附录 |
 | Mermaid 架构图/流程图/状态机 | 150+ 张 |
 | 覆盖核心子系统 | 预备知识、工具系统、权限管线、上下文压缩、错误恢复、记忆系统、钩子系统、子智能体调度、MCP 集成、技能插件、流式架构、Plan 模式、Codex 对比、团队采纳 |
