@@ -1,0 +1,38 @@
+[workspace]
+members = [
+    "第一部分-基础篇/common",
+    "第一部分-基础篇/00-预备知识/code",
+    "第一部分-基础篇/02-对话循环-Agent的心跳/code",
+    "第一部分-基础篇/03-工具系统-Agent的双手/code",
+    "第一部分-基础篇/04-权限管线-Agent的护栏/code",
+    "第二部分-核心系统篇/06-记忆系统-Agent的长期记忆/code",
+    "第二部分-核心系统篇/07-上下文管理-Agent的工作记忆/code",
+    "第二部分-核心系统篇/09-钩子系统-Agent的生命周期扩展点/code",
+    "第三部分-高级模式篇/10-子智能体与Fork模式/code",
+    "第三部分-高级模式篇/13-MCP集成与外部协议/code",
+    "第四部分-工程实践篇/15-流式架构与性能优化/code",
+    "第四部分-工程实践篇/17-构建你自己的Agent-Harness/code",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+mini-claude-common = { path = "第一部分-基础篇/common" }
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", features = ["json", "stream"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+eventsource-stream = "0.2"
+futures = "0.3"
+tokio-stream = "0.1"
+clap = { version = "4", features = ["derive"] }
+regex = "1"
+chrono = "0.4"
+async-trait = "0.1"

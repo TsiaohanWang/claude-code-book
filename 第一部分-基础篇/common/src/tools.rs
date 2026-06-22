@@ -23,6 +23,11 @@ use crate::types::{ToolResult, ToolSpec};
 /// - isReadOnly/isConcurrencySafe: 安全属性
 /// - renderToolUseMessage/renderToolResultMessage: UI 渲染
 ///
+/// Codex 对比（codex-rs/tools/src/tool_spec.rs）：
+/// Codex 使用 enum ToolSpec { Function, Namespace, ToolSearch, WebSearch, Freeform }
+/// 而非 trait。Function 变体包含 ResponsesApiTool（name + parameters + description）。
+/// Codex 的工具通过 ToolRouter 分发，而非 trait 动态派发。
+///
 /// 我们保留最核心的方法：name、spec、execute。
 pub trait ToolHandler: Send + Sync {
     fn name(&self) -> &str;
@@ -38,6 +43,10 @@ pub trait ToolHandler: Send + Sync {
 ///
 /// Claude Code 的工具注册在 src/tools.ts 中，
 /// 通过 getAllBaseTools() 返回所有可用工具。
+///
+/// 注意：Claude Code 官方工具名称使用首字母大写（Read, Edit, Write, Bash），
+/// 我们使用小写+下划线（read_file 等）以符合 Rust 命名惯例。
+/// 工具名称在 spec() 中定义，发送给 API 时使用 Claude Code 的官方名称。
 pub struct ToolRegistry {
     handlers: HashMap<String, Box<dyn ToolHandler>>,
 }
@@ -208,10 +217,18 @@ impl ToolHandler for WriteFileTool {
     }
 }
 
-/// 编辑文件工具 —— 对应 Claude Code 的 FileEditTool
+/// 编辑文件工具 —— 对应 Claude Code 的 EditTool
 ///
 /// Claude Code 使用 search-and-replace 模式，而非行号或 AST。
 /// 这是其"抗幻觉"设计的核心。
+///
+/// 官方文档 (code.claude.com/docs/en/tools) 描述三重验证：
+/// 1. read-before-edit: Claude 必须在当前对话中读取过该文件
+/// 2. match: old_string 必须在文件中精确出现
+/// 3. uniqueness: old_string 必须只出现一次（除非 replace_all: true）
+///
+/// 我们省略 read-before-edit 检查（需要跨工具状态追踪），
+/// 保留 match 和 uniqueness 两项核心验证。
 pub struct EditFileTool;
 
 impl ToolHandler for EditFileTool {
@@ -290,10 +307,30 @@ impl ToolHandler for EditFileTool {
 /// - AST 解析和 23 项静态安全检查
 /// - 沙箱隔离（macOS Seatbelt / Linux 命名空间）
 /// - 命令分类（搜索/读取 vs 写入）
-/// - 超时控制
+/// - 超时控制（默认 2 分钟，最长 10 分钟）
+/// - 输出限制（默认 30,000 字符）
 ///
-/// 我们简化为基本的命令执行。
+/// 官方文档 (code.claude.com/docs/en/tools) 描述的只读命令识别：
+/// Claude Code 内置识别 ls, cat, echo, pwd, head, tail, grep, find, wc,
+/// which, diff, stat, du, cd 等只读命令，这些命令在所有权限模式下无需确认。
+///
+/// 我们简化为基本的命令执行，添加只读命令识别。
 pub struct BashTool;
+
+/// Claude Code 内置的只读命令列表
+/// 官方文档：ls, cat, echo, pwd, head, tail, grep, find, wc, which, diff, stat, du, cd
+const READ_ONLY_COMMANDS: &[&str] = &[
+    "ls", "cat", "echo", "pwd", "head", "tail", "grep", "find",
+    "wc", "which", "diff", "stat", "du", "cd", "git status", "git log", "git diff",
+];
+
+impl BashTool {
+    /// 检查命令是否为只读（对应 Claude Code 的只读命令识别）
+    pub fn is_read_only_command(command: &str) -> bool {
+        let trimmed = command.trim();
+        READ_ONLY_COMMANDS.iter().any(|ro| trimmed == *ro || trimmed.starts_with(&format!("{} ", ro)))
+    }
+}
 
 impl ToolHandler for BashTool {
     fn name(&self) -> &str { "bash" }

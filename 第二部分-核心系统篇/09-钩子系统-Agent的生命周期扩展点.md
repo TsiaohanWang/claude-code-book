@@ -1096,6 +1096,24 @@ main();
 
 ---
 
+### 练习：运行 Rust 实现并对照源码
+
+> **配套代码：** `code/src/main.rs` 用 Rust 实现了本章的核心概念。
+
+```bash
+cargo run -p ch08-hooks    # 运行演示
+cargo test -p ch08-hooks   # 运行测试
+```
+
+阅读 `code/src/main.rs`，对照书中描述理解 Rust 实现如何映射 Claude Code 架构。重点关注：
+
+1. **类型系统如何强制正确性**：Rust 的 trait、泛型和所有权系统在编译期保证了 Claude Code 在运行时通过检查实现的约束
+2. **错误处理模式**：`Result<T, E>` 和 `?` 操作符对应 Claude Code 的错误恢复路径
+3. **并发安全**：`Send + Sync` 约束对应 Claude Code 的 `isConcurrencySafe()` 属性
+
+**修改实验：** 尝试修改 `code/src/main.rs` 中的关键参数，运行 `cargo run -p ch08-hooks` 观察行为变化。
+
+
 ## 关键要点
 
 1. **五种钩子类型**：command（Shell 命令）、prompt（LLM 评估）、agent（Agentic 验证）、http（HTTP 调用）、function（运行时回调），前四种可持久化，最后一种仅在会话内存中存在。选择钩子类型的决策树：需要执行系统命令用 Command，需要智能判断用 Prompt，需要多步验证用 Agent，需要与外部系统集成用 HTTP，需要深度运行时交互用 Function。

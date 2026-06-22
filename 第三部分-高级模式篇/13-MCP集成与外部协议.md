@@ -1204,7 +1204,7 @@ main();
 - 在 `.claude/settings.local.json` 中配置权限规则，自动允许 `mcp__filesystem__read_file` 但保留 `mcp__filesystem__write_file` 的确认提示
 - 测试在启动后禁用文件系统服务器，观察工具列表的变化
 
-### 练习 2：理解工具名称解析
+### 练习 3：理解工具名称解析
 
 根据 `mcp__{server}__{tool}` 的命名规则，分析以下场景：
 - 解析 `mcp__github__create_issue` 会得到什么结果？
@@ -1215,7 +1215,7 @@ main();
 - 如果同时配置了名为 `github` 和 `git_hub` 的两个服务器，它们提供同名工具时，如何通过权限配置分别控制？
 - 在 SDK 模式下（设置 `CLAUDE_AGENT_SDK_MCP_NO_PREFIX`），如果一个 MCP 工具名为 `Read`，它会如何与内置的 Read 工具交互？
 
-### 练习 3：配置企业级 MCP 安全策略
+### 练习 4：配置企业级 MCP 安全策略
 
 在企业管理配置中设置白名单和黑名单：
 
@@ -1238,7 +1238,7 @@ main();
 - 设计一个安全策略，只允许公司内部的 MCP 服务器（`*.company.com`），同时阻止所有外部公共服务器
 - 考虑如何处理"同一服务器在不同作用域中被配置"的情况——当 enterprise 配置允许了某个服务器，但 local 配置中该服务器在黑名单中，结果会怎样？
 
-### 练习 4：多服务器集成实战
+### 练习 5：多服务器集成实战
 
 配置一个包含多个 MCP 服务器的复杂环境，模拟真实的开发工作流：
 
@@ -1271,7 +1271,7 @@ main();
 - 如果 GitHub 服务器连接失败，其他服务器会受到影响吗？
 - 如何为每个服务器配置不同级别的权限（如 GitHub 完全允许，数据库只允许只读操作）？
 
-### 练习 5：理解 Bridge 通信流程
+### 练习 6：理解 Bridge 通信流程
 
 分析以下场景中的 Bridge 通信行为：
 
@@ -1286,6 +1286,24 @@ main();
 3. 如果用户没有 claude.ai 订阅，会在哪一层门控被拒绝？
 
 ---
+
+### 练习：运行 Rust 实现并对照源码
+
+> **配套代码：** `code/src/main.rs` 用 Rust 实现了本章的核心概念。
+
+```bash
+cargo run -p ch09-mcp    # 运行演示
+cargo test -p ch09-mcp   # 运行测试
+```
+
+阅读 `code/src/main.rs`，对照书中描述理解 Rust 实现如何映射 Claude Code 架构。重点关注：
+
+1. **类型系统如何强制正确性**：Rust 的 trait、泛型和所有权系统在编译期保证了 Claude Code 在运行时通过检查实现的约束
+2. **错误处理模式**：`Result<T, E>` 和 `?` 操作符对应 Claude Code 的错误恢复路径
+3. **并发安全**：`Send + Sync` 约束对应 Claude Code 的 `isConcurrencySafe()` 属性
+
+**修改实验：** 尝试修改 `code/src/main.rs` 中的关键参数，运行 `cargo run -p ch09-mcp` 观察行为变化。
+
 
 ## 关键要点
 

@@ -59,6 +59,15 @@ pub enum HookType {
 /// - Allow: 允许工具继续执行
 /// - Deny: 拒绝工具执行（返回错误给模型）
 /// - Modify: 修改工具输入或输出
+///
+/// Codex 对比（codex-rs/hooks/src/types.rs）：
+/// Codex 使用 HookResult::Success / FailedContinue / FailedAbort。
+/// - Success → 对应 Allow
+/// - FailedContinue → 对应 Deny（但后续 Hook 仍执行）
+/// - FailedAbort → 对应 Deny（且停止后续 Hook）
+///
+/// 我们的 HookDecision 更贴近 Claude Code 的用户交互模型，
+/// Codex 的 HookResult 更贴近 Rust 的错误处理模式。
 #[derive(Debug, Clone)]
 pub enum HookDecision {
     /// 允许执行

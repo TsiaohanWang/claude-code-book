@@ -11,9 +11,14 @@
 //! - Token 使用量追踪：实时监控上下文占用
 //!
 //! Claude Code 的上下文管理位于：
-//!   src/context/: 上下文管理核心
-//!   src/context/compression.ts: 压缩策略
-//!   src/context/circuitBreaker.ts: 断路器
+//!   src/services/compact/: 压缩核心
+//!   src/services/compact/autoCompact.ts: 自动压缩
+//!   src/services/compact/compact.ts: 压缩执行
+//!
+//! Codex 对比（codex-rs/core/src/compact.rs）：
+//! Codex 使用 CompactionTrigger::Auto + CompactionReason 枚举控制压缩触发，
+//! 支持 inline compact（本地）和 remote compact（服务端）两种模式。
+//! Claude Code 的压缩全部在本地执行，Codex 支持将压缩任务发送给服务端处理。
 //!
 //! 运行方式：
 //! ```bash

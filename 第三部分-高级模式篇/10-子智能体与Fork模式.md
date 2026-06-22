@@ -711,6 +711,24 @@ main();
 
 ---
 
+### 练习：运行 Rust 实现并对照源码
+
+> **配套代码：** `code/src/main.rs` 用 Rust 实现了本章的核心概念。
+
+```bash
+cargo run -p ch10-multi-agent    # 运行演示
+cargo test -p ch10-multi-agent   # 运行测试
+```
+
+阅读 `code/src/main.rs`，对照书中描述理解 Rust 实现如何映射 Claude Code 架构。重点关注：
+
+1. **类型系统如何强制正确性**：Rust 的 trait、泛型和所有权系统在编译期保证了 Claude Code 在运行时通过检查实现的约束
+2. **错误处理模式**：`Result<T, E>` 和 `?` 操作符对应 Claude Code 的错误恢复路径
+3. **并发安全**：`Send + Sync` 约束对应 Claude Code 的 `isConcurrencySafe()` 属性
+
+**修改实验：** 尝试修改 `code/src/main.rs` 中的关键参数，运行 `cargo run -p ch10-multi-agent` 观察行为变化。
+
+
 ## 关键要点
 
 1. **AgentTool 的三层智能体体系**（内置、自定义、插件）提供了从开箱即用到深度定制的完整光谱，优先级机制允许企业级覆盖。自定义智能体通过 Markdown 文件定义，降低了创建门槛。

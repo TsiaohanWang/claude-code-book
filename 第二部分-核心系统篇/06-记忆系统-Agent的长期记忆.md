@@ -671,7 +671,7 @@ main();
 5. `reference` -- 外部引用（开发环境的 URL）
 6. `feedback` -- 行为指导（包含明确的规则和隐含的原因）
 
-### 练习 2：Frontmatter 编写
+### 练习 3：Frontmatter 编写
 
 为以下场景编写记忆文件的 Frontmatter 和内容：
 
@@ -695,7 +695,7 @@ type: feedback
 
 **延伸思考**：如果用户在一周后说"lint 规则已经集成到 pre-commit hook 中了，不需要手动运行了"，Agent 应该如何处理这条记忆？是删除它，还是更新它？
 
-### 练习 3：缓存感知架构分析
+### 练习 4：缓存感知架构分析
 
 假设你要为 forked Agent 添加一个新工具 `MemorySearch`（用于语义搜索记忆文件）。以下两种方案哪种更好？
 
@@ -704,7 +704,7 @@ type: feedback
 
 **参考答案**：方案 B 更好。方案 A 改变了工具列表，导致 API 缓存 key 不同，无法共享主对话的提示缓存。方案 B 保持了工具列表的一致性，权限在执行时而非定义时过滤，维护了缓存共享能力。
 
-### 练习 4：记忆管理策略设计
+### 练习 5：记忆管理策略设计
 
 你同时维护 5 个项目，每个项目的记忆目录中都有 20-30 条记忆。设计一个记忆管理策略，解决以下问题：
 
@@ -718,6 +718,24 @@ type: feedback
 - 控制每条记忆的 description 长度，定期合并主题相近的记忆条目
 
 ---
+
+### 练习：运行 Rust 实现并对照源码
+
+> **配套代码：** `code/src/main.rs` 用 Rust 实现了本章的核心概念。
+
+```bash
+cargo run -p ch06-memory    # 运行演示
+cargo test -p ch06-memory   # 运行测试
+```
+
+阅读 `code/src/main.rs`，对照书中描述理解 Rust 实现如何映射 Claude Code 架构。重点关注：
+
+1. **类型系统如何强制正确性**：Rust 的 trait、泛型和所有权系统在编译期保证了 Claude Code 在运行时通过检查实现的约束
+2. **错误处理模式**：`Result<T, E>` 和 `?` 操作符对应 Claude Code 的错误恢复路径
+3. **并发安全**：`Send + Sync` 约束对应 Claude Code 的 `isConcurrencySafe()` 属性
+
+**修改实验：** 尝试修改 `code/src/main.rs` 中的关键参数，运行 `cargo run -p ch06-memory` 观察行为变化。
+
 
 ## 关键要点
 

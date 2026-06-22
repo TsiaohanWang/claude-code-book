@@ -1251,6 +1251,24 @@ flowchart TD
 
 ---
 
+### 练习：运行 Rust 实现并对照源码
+
+> **配套代码：** `code/src/main.rs` 用 Rust 实现了本章的核心概念。
+
+```bash
+cargo run -p ch11-mini-claude    # 运行演示
+cargo test -p ch11-mini-claude   # 运行测试
+```
+
+阅读 `code/src/main.rs`，对照书中描述理解 Rust 实现如何映射 Claude Code 架构。重点关注：
+
+1. **类型系统如何强制正确性**：Rust 的 trait、泛型和所有权系统在编译期保证了 Claude Code 在运行时通过检查实现的约束
+2. **错误处理模式**：`Result<T, E>` 和 `?` 操作符对应 Claude Code 的错误恢复路径
+3. **并发安全**：`Send + Sync` 约束对应 Claude Code 的 `isConcurrencySafe()` 属性
+
+**修改实验：** 尝试修改 `code/src/main.rs` 中的关键参数，运行 `cargo run -p ch11-mini-claude` 观察行为变化。
+
+
 ## 关键要点
 
 1. **循环状态模式：** 使用 `while(true)` + `State` 对象 + `continue` 管理循环状态，比递归调用更易调试和维护。Claude Code 的核心查询函数用约 1700 行代码实现了这一模式，处理了十余种状态转换路径。循环优于递归的三个理由：状态恢复更自然、中止更可控、调试更直观。

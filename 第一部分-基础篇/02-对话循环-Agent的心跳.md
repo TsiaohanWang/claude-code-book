@@ -397,180 +397,17 @@ flowchart TD
 
 ## 实战练习
 
-### 练习 1：运行一个最小 Agent 循环
+### 练习 1：追踪一次完整的工具调用流
 
-以下代码完整实现了第 2 章的核心概念——AsyncGenerator 驱动的 Agent 循环、依赖注入、状态不可变流转、十种终止原因。复制到 `mini-loop.ts` 后用 `npx tsx mini-loop.ts` 运行（需要设置 `ANTHROPIC_API_KEY` 环境变量）。
+在对话主循环的以下关键位置添加日志：
+- 请求开始时（stream_request_start 事件发出后）
+- 工具调用块检测时（第一个 tool_use 块到达时）
+- 工具执行开始时（runTools 或 StreamingToolExecutor 被调用时）
+- 下一轮状态构建时（continue 之前）
 
-```typescript
-// mini-loop.ts — 最小 Agent 循环（~80 行）
-// 核心概念：AsyncGenerator + 依赖注入 + 不可变状态 + 终止原因
+向 Claude Code 发送一个需要调用工具的请求（如"读取当前目录的 package.json"），观察消息如何从 API 流经工具执行，再回填到下一轮 API 调用。
 
-import Anthropic from "@anthropic-ai/sdk";
-
-// ── 依赖注入接口（对应 2.3 节 QueryDeps） ──────────────
-interface LoopDeps {
-  callModel: (msgs: Message[]) => Promise<Anthropic.RawMessageStreamEvent[]>;
-  uuid: () => string;
-}
-
-// ── 消息与状态类型 ─────────────────────────────────────
-type Message = Anthropic.MessageParam;
-type State = { messages: Message[]; turnCount: number };
-type Terminal = { reason: string };
-type Continue = { reason: string; state: State };
-
-// ── 工具定义（最小集合） ────────────────────────────────
-const tools: Anthropic.Tool[] = [{
-  name: "read_file",
-  description: "Read a file's contents",
-  input_schema: {
-    type: "object" as const,
-    properties: { path: { type: "string" } },
-    required: ["path"],
-  },
-}];
-
-// ── 工具执行 ────────────────────────────────────────────
-async function executeTool(name: string, input: Record<string, unknown>): Promise<string> {
-  if (name === "read_file") {
-    const fs = await import("fs");
-    return fs.readFileSync(input.path as string, "utf-8");
-  }
-  return `Unknown tool: ${name}`;
-}
-
-// ── 生产环境依赖 ────────────────────────────────────────
-function defaultDeps(client: Anthropic): LoopDeps {
-  return {
-    callModel: async (msgs) => {
-      const stream = client.messages.stream({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 4096,
-        system: "You are a helpful coding assistant. Use tools when needed.",
-        messages: msgs,
-        tools,
-      });
-      const events: Anthropic.RawMessageStreamEvent[] = [];
-      for await (const event of stream) events.push(event);
-      return events;
-    },
-    uuid: () => crypto.randomUUID(),
-  };
-}
-
-// ── 核心循环（对应 2.1 节 AsyncGenerator 主循环） ──────
-async function* agentLoop(
-  userInput: string,
-  deps: LoopDeps,
-  maxTurns = 10,
-): AsyncGenerator<string, Terminal, void> {
-  // 不可变状态初始化（对应 2.4 节 State 类型）
-  let state: State = { messages: [{ role: "user", content: userInput }], turnCount: 0 };
-
-  while (true) {
-    // 终止条件：最大轮次（对应 2.2 节 max_turns）
-    if (state.turnCount >= maxTurns) {
-      return { reason: `max_turns (${state.turnCount})` };
-    }
-
-    yield `── Turn ${state.turnCount + 1} ──\n`;
-
-    // 阶段三：API 调用（流式接收）
-    const events = await deps.callModel(state.messages);
-    const assistantBlocks: Anthropic.ContentBlock[] = [];
-    const toolUses: Anthropic.ToolUseBlock[] = [];
-
-    for (const event of events) {
-      if (event.type === "content_block_start") {
-        assistantBlocks.push(event.content_block);
-        if (event.content_block.type === "tool_use") {
-          toolUses.push(event.content_block);
-          yield `  🔧 Tool call: ${event.content_block.name}(${JSON.stringify(event.content_block.input)})\n`;
-        }
-      }
-    }
-
-    // 阶段四：检测是否有工具调用
-    if (toolUses.length === 0) {
-      // 终止条件：completed（模型返回纯文本）
-      const text = assistantBlocks
-        .filter((b): b is Anthropic.TextBlock => b.type === "text")
-        .map(b => b.text).join("");
-      yield `  ✅ ${text}\n`;
-      return { reason: "completed" };
-    }
-
-    // 阶段五：工具执行 + 结果回填
-    const toolResults: Anthropic.ToolResultBlockParam[] = [];
-    for (const tu of toolUses) {
-      try {
-        const result = await executeTool(tu.name, tu.input as Record<string, unknown>);
-        toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: result.slice(0, 2000) });
-        yield `  📄 Result: ${result.slice(0, 100)}...\n`;
-      } catch (err: any) {
-        toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: `Error: ${err.message}`, is_error: true });
-        yield `  ❌ Error: ${err.message}\n`;
-      }
-    }
-
-    // 状态不可变更新（整体替换，对应 2.4 节）
-    state = {
-      messages: [
-        ...state.messages,
-        { role: "assistant", content: assistantBlocks },
-        { role: "user", content: toolResults },
-      ],
-      turnCount: state.turnCount + 1,
-    };
-  }
-}
-
-// ── 主程序 ──────────────────────────────────────────────
-async function main() {
-  const client = new Anthropic();
-  const deps = defaultDeps(client);
-
-  // 测试依赖注入：用假依赖替换真实 API（对应 2.3 节）
-  const testDeps: LoopDeps = {
-    callModel: async () => [{
-      type: "content_block_start",
-      index: 0,
-      content_block: { type: "text", text: "This is a test response." } as Anthropic.TextBlock,
-    }],
-    uuid: () => "test-uuid",
-  };
-
-  // 使用真实依赖运行
-  console.log("=== Real API ===");
-  const gen = agentLoop("Read the file package.json", deps);
-  for await (const event of gen) {
-    process.stdout.write(event);
-  }
-  const terminal = gen.return();
-  console.log(`Terminal: ${JSON.stringify(terminal)}\n`);
-
-  // 使用测试依赖运行（无需 API）
-  console.log("=== Test (no API) ===");
-  const testGen = agentLoop("test input", testDeps);
-  for await (const event of testGen) {
-    process.stdout.write(event);
-  }
-  console.log(`Terminal: ${JSON.stringify(testGen.return())}`);
-}
-
-main().catch(console.error);
-```
-
-**运行后观察：**
-- `yield` 产出的事件如何实时显示（流式输出）
-- `while(true)` + `continue` 如何驱动多轮循环
-- 状态对象如何在每轮被整体替换（不可变性）
-- 工具结果如何回填到下一轮消息历史
-
-**修改实验：**
-1. 将 `maxTurns` 改为 2，观察 `max_turns` 终止路径
-2. 在工具执行中抛出异常，观察 `is_error` 处理
-3. 替换 `testDeps` 让模型返回 `tool_use`，观察多轮循环
+**扩展思考：** 如果连续发送三个需要工具调用的请求，观察 turn 计数如何递增。尝试在工具执行期间按 Ctrl+C，观察 `aborted_tools` 终止路径的清理逻辑。
 
 ### 练习 2：实现断路器模式
 
@@ -597,7 +434,7 @@ class CircuitBreaker {
 
     try {
       const result = await fn();
-      this.consecutiveFailures = 0;  // 成功 → 重置计数器
+      this.consecutiveFailures = 0;
       this.state = "closed";
       return result;
     } catch (err) {
@@ -614,11 +451,9 @@ class CircuitBreaker {
   reset() { this.state = "closed"; this.consecutiveFailures = 0; }
 }
 
-// ── 模拟连续失败的自动压缩 ──────────────────────────────
 async function main() {
   const breaker = new CircuitBreaker(3);
   let callCount = 0;
-
   const fakeCompact = async () => {
     callCount++;
     if (callCount <= 5) throw new Error(`Compact failed (#${callCount})`);
@@ -634,7 +469,6 @@ async function main() {
     }
   }
 
-  // 手动重置后重试
   breaker.reset();
   console.log("\nAfter reset:");
   try {
@@ -648,26 +482,28 @@ async function main() {
 main();
 ```
 
-**预期输出：**
-```
-  Attempt 1: Circuit breaker is OPEN — skipping attempt (state: closed)
-  Attempt 2: Circuit breaker is OPEN — skipping attempt (state: closed)
-  Attempt 3: ⚡ Circuit OPEN after 3 failures
-  Attempt 4: Circuit breaker is OPEN — skipping attempt (state: open)
-  Attempt 5: Circuit breaker is OPEN — skipping attempt (state: open)
-  Attempt 6: Circuit breaker is OPEN — skipping attempt (state: open)
+### 练习 3：运行 Rust 实现并对照源码
 
-After reset:
-  Retry: Compacted! (state: closed)
+> **配套代码：** `code/src/main.rs` 用 Rust 实现了本章的核心概念。
+
+```bash
+cargo run -p ch02-agent-loop -- "读取 package.json 并告诉我有多少依赖"   # 需要 ANTHROPIC_API_KEY
+cargo test -p ch02-agent-loop   # 运行测试
 ```
 
-### 练习 3：追踪 Claude Code 的实际对话循环
+阅读 `code/src/main.rs`，对照下表理解 Rust 实现如何映射 Claude Code 架构：
 
-如果你已安装 Claude Code，在终端中启动它并发送一个需要工具调用的请求（如"读取当前目录的 package.json"）。观察：
+| Rust 代码 | Claude Code 源码 | 本章小节 |
+|-----------|-----------------|---------|
+| `agent_loop()` 函数 | `src/query.ts` queryLoop() | 2.1 异步生成器 |
+| `while(true)` + `continue` | `src/query.ts:307` | 2.2 状态初始化 |
+| `messages.push(tool_result)` | `src/query.ts` tool result 回填 | 2.2 阶段五 |
+| `max_turns` 终止检查 | `src/query.ts` maxTurns | 2.2 终止条件 |
+| `retry_with_backoff()` | `src/agent.ts:36-61` | 2.3 依赖注入 |
 
-1. 模型先输出思考文本（`thinking` 块），然后附加工具调用（`tool_use` 块）——这对应 2.2 节阶段三的"混合输出"
-2. 工具执行结果被注入消息历史后，模型决定是否继续调用工具——这对应 2.2 节阶段五的"下一轮"
-3. 在工具执行期间按 Ctrl+C，观察中断处理——这对应 2.2 节的 `aborted_tools` 终止路径
+**Rust 特有洞察：** 为什么代码使用 `Vec<Message>` 而不是不可变数据结构？（提示：Rust 的所有权系统天然保证了不可变性——将 `messages` 传入 `agent_loop` 后，调用方无法再修改它）
+
+**修改实验：** 在 `code/src/main.rs` 中将 `max_turns` 改为 2，运行观察 `max_turns` 终止路径。
 
 ---
 

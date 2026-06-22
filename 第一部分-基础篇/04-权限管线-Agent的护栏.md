@@ -664,6 +664,24 @@ main();
 
 ---
 
+### 练习：运行 Rust 实现并对照源码
+
+> **配套代码：** `code/src/main.rs` 用 Rust 实现了本章的核心概念。
+
+```bash
+cargo run -p ch04-permissions    # 运行演示
+cargo test -p ch04-permissions   # 运行测试
+```
+
+阅读 `code/src/main.rs`，对照书中描述理解 Rust 实现如何映射 Claude Code 架构。重点关注：
+
+1. **类型系统如何强制正确性**：Rust 的 trait、泛型和所有权系统在编译期保证了 Claude Code 在运行时通过检查实现的约束
+2. **错误处理模式**：`Result<T, E>` 和 `?` 操作符对应 Claude Code 的错误恢复路径
+3. **并发安全**：`Send + Sync` 约束对应 Claude Code 的 `isConcurrencySafe()` 属性
+
+**修改实验：** 尝试修改 `code/src/main.rs` 中的关键参数，运行 `cargo run -p ch04-permissions` 观察行为变化。
+
+
 ## 关键要点总结
 
 1. **四阶段管线**：权限检查按照 validateInput -> 规则匹配 -> checkPermissions -> 交互式提示的顺序逐级推进，任何阶段都可以做出终局决定。这种纵深防御的设计确保了没有单一的安全检查点是"银弹"，但每一层都可以独立短路，阻止不安全的操作。

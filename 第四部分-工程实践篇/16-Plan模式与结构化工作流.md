@@ -827,7 +827,7 @@ main();
 
 **延伸思考：** 对比使用 Plan 模式和不使用 Plan 模式完成同一任务的效果差异。特别关注：实施结果是否符合预期？是否需要返工？总耗时和 token 消耗如何？
 
-### 练习 2：创建 Cron 定时任务
+### 练习 3：创建 Cron 定时任务
 
 使用 `/schedule` 技能创建一个 one-shot 和一个 recurring 定时任务。检查 `.claude/scheduled_tasks.json` 的内容变化。终止并重新启动 Claude Code，观察错过任务的检测通知。
 
@@ -839,13 +839,13 @@ main();
 5. 退出并重启 Claude Code，观察错过任务的检测通知
 6. 手动删除 recurring 任务，确认文件内容更新
 
-### 练习 3：分析计划文件恢复
+### 练习 4：分析计划文件恢复
 
 在一个远程会话（CCR）中，进入 Plan 模式并创建一个计划。终止会话后恢复（`--resume`），检查计划文件是否被正确恢复。结合 `recoverPlanFromMessages` 的三种恢复来源，分析你的场景走了哪条路径。
 
 **调试提示：** 使用 `CLAUDE_CODE_DEBUG=1` 环境变量启动 Claude Code，在日志中搜索 `copyPlanForResume` 和 `recoverPlanFromMessages` 关键词，可以观察到恢复过程走了哪条路径。
 
-### 练习 4：设计一个完整的事件驱动工作流
+### 练习 5：设计一个完整的事件驱动工作流
 
 选择以下场景之一，设计一个完整的事件驱动工作流（使用 Plan 模式 + 定时任务 + 远程触发）：
 

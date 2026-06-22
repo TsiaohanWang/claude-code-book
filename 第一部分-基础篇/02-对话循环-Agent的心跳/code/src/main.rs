@@ -10,10 +10,18 @@
 //! - 不可变状态：每次循环创建新的消息历史
 //! - 终止条件：模型返回纯文本（无工具调用）时结束
 //!
+//! Claude Code 的对话循环位于：src/query.ts (queryLoop)
+//! Codex 对比：codex-rs/core/src/session/turn.rs (run_turn)
+//!
+//! 关键差异：
+//! - Claude Code 使用 AsyncGenerator 流式产出事件
+//! - Codex 使用事件驱动模型，通过 sess.send_event() 发送事件
+//! - 两者核心逻辑一致：loop { call_model → execute_tools → continue/break }
+//!
 //! 运行方式：
 //! ```bash
 //! export ANTHROPIC_API_KEY="sk-ant-..."
-//! cargo run -p ch02-agent-loop
+//! cargo run -p ch02-agent-loop -- "your question"
 //! ```
 
 use anyhow::{Context, Result};

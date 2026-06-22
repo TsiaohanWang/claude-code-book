@@ -139,6 +139,15 @@ impl ToolResult {
 /// - Allow: 允许执行
 /// - Deny: 拒绝执行
 /// - Ask: 需要用户确认
+///
+/// Codex 对比（codex-rs/execpolicy/src/decision.rs）：
+/// - Allow → 允许执行（对应 Claude Code 的 Allow）
+/// - Prompt → 需要用户确认（对应 Claude Code 的 Ask）
+/// - Forbidden → 直接拒绝（对应 Claude Code 的 Deny）
+///
+/// 命名差异源于两个系统的不同设计理念：
+/// - Claude Code 以用户交互为中心（Ask = 询问用户）
+/// - Codex 以策略评估为中心（Prompt = 提示用户）
 #[derive(Debug, Clone, PartialEq)]
 pub enum PermissionDecision {
     Allow,
@@ -146,21 +155,26 @@ pub enum PermissionDecision {
     Ask,
 }
 
-/// 权限模式 —— 对应 Claude Code 的五种外部权限模式
+/// 权限模式 —— 对应 Claude Code 的六种权限模式
 ///
-/// Claude Code 定义了五种外部权限模式：
-/// - default: 无匹配规则时交互确认
-/// - plan: 只读为主
-/// - acceptEdits: 自动批准编辑
-/// - bypassPermissions: 全部自动批准
+/// Claude Code 定义了六种权限模式（官方文档 code.claude.com/docs/en/permissions）：
+/// - default: 无匹配规则时交互确认（标准行为）
+/// - acceptEdits: 自动批准文件编辑和常见文件系统命令
+/// - plan: 只读模式，Claude 可读取文件和运行只读命令但不编辑源文件
+/// - auto: 自动批准工具调用，后台安全检查验证操作是否符合请求（研究预览）
 /// - dontAsk: 无匹配规则时自动拒绝
+/// - bypassPermissions: 跳过权限提示，但 deny 规则和 rm -rf / 仍生效
+///
+/// Codex 对比：Codex 使用 AskForApproval 枚举控制审批策略，
+/// 包含 Never / OnFailure / Always / UnlessAllowListed 等选项。
 #[derive(Debug, Clone)]
 pub enum PermissionMode {
     Default,
-    Plan,
     AcceptEdits,
-    BypassPermissions,
+    Plan,
+    Auto,
     DontAsk,
+    BypassPermissions,
 }
 
 // ============================================================================

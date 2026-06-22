@@ -202,6 +202,10 @@ impl PermissionPipeline {
             PermissionMode::BypassPermissions => {
                 PipelineStageResult::Decided(PermissionDecision::Allow)
             }
+            // Auto: 自动批准，后台安全检查（研究预览）
+            PermissionMode::Auto => {
+                PipelineStageResult::Decided(PermissionDecision::Allow)
+            }
             // DontAsk: 无匹配规则时自动拒绝
             PermissionMode::DontAsk => {
                 PipelineStageResult::Decided(PermissionDecision::Deny)
@@ -278,6 +282,7 @@ fn demo_permission_modes() {
         ("Default", PermissionMode::Default),
         ("Plan", PermissionMode::Plan),
         ("AcceptEdits", PermissionMode::AcceptEdits),
+        ("Auto", PermissionMode::Auto),
         ("BypassPermissions", PermissionMode::BypassPermissions),
         ("DontAsk", PermissionMode::DontAsk),
     ];

@@ -675,6 +675,24 @@ main();
 
 ---
 
+### 练习：运行 Rust 实现并对照源码
+
+> **配套代码：** `code/src/main.rs` 用 Rust 实现了本章的核心概念。
+
+```bash
+cargo run -p ch05-context    # 运行演示
+cargo test -p ch05-context   # 运行测试
+```
+
+阅读 `code/src/main.rs`，对照书中描述理解 Rust 实现如何映射 Claude Code 架构。重点关注：
+
+1. **类型系统如何强制正确性**：Rust 的 trait、泛型和所有权系统在编译期保证了 Claude Code 在运行时通过检查实现的约束
+2. **错误处理模式**：`Result<T, E>` 和 `?` 操作符对应 Claude Code 的错误恢复路径
+3. **并发安全**：`Send + Sync` 约束对应 Claude Code 的 `isConcurrencySafe()` 属性
+
+**修改实验：** 尝试修改 `code/src/main.rs` 中的关键参数，运行 `cargo run -p ch05-context` 观察行为变化。
+
+
 ## 关键要点
 
 1. **有效窗口 = 模型窗口 - 预留输出令牌**：Claude Code 预留最多 20,000 令牌用于压缩摘要的输出空间，确保压缩操作本身不会因为空间不足而失败。
