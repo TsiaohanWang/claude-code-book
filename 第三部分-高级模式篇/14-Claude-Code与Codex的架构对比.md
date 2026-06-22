@@ -240,6 +240,53 @@ Codex 的主轴：
 
 ---
 
+
+
+**Rust 实现**（权限决策类型对比）：
+
+```rust
+// Claude Code 权限决策（对应 src/permissions/）
+enum ClaudeDecision { Allow, Deny, Ask }
+
+// Codex 权限决策（对应 codex-rs/execpolicy/src/decision.rs）
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum CodexDecision {
+    Allow,           // 对应 Claude Code 的 Allow
+    Prompt,          // 对应 Claude Code 的 Ask
+    Forbidden,       // 对应 Claude Code 的 Deny
+}
+
+// 关键差异：Claude Code 以用户交互为中心（Ask = 询问用户）
+// Codex 以策略评估为中心（Prompt = 提示用户）
+// 两者语义相同，命名不同
+
+// Claude Code Prompt 组装（动态）
+fn build_claude_prompt(cwd: &str, tools: &[&str], claude_md: &str) -> String {
+    format!(
+        "You are Claude Code.
+Working directory: {cwd}
+Tools: {}
+{claude_md}",
+        tools.join(", ")
+    )
+}
+
+// Codex 片段组装（结构化）
+fn build_codex_prompt(fragments: &[(&str, &str, &str)]) -> String {
+    fragments.iter()
+        .map(|(marker, source, content)| format!("<{marker} source="{source}">
+{content}
+</{marker}>"))
+        .collect::<Vec<_>>()
+        .join("
+
+")
+}
+```
+
+> **核心差异：** Claude Code 动态组装 Prompt（灵活但难形式化），Codex 使用结构化片段（显式但较重）。两者都承认模型不可靠，Harness 是秩序来源。
+
 ## 关键要点
 
 1. **控制平面的分歧是根本性的。** Claude Code 动态组装 Prompt，Codex 使用结构化片段。前者灵活但难以形式化，后者显式但较重。

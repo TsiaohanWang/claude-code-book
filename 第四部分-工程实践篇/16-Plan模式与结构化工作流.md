@@ -737,6 +737,43 @@ flowchart TD
 
 ---
 
+
+
+**Rust 实现**（Plan 模式状态机）：
+
+```rust
+// 对应 Claude Code src/tools/EnterPlanModeTool.ts
+
+#[derive(Debug, Clone)]
+enum PermissionMode { Default, Plan, BypassPermissions }
+
+struct PlanState {
+    mode: PermissionMode,
+    pre_plan_mode: Option<PermissionMode>,
+    plan_file_path: Option<String>,
+}
+
+impl PlanState {
+    fn enter_plan(&mut self) {
+        self.pre_plan_mode = Some(self.mode.clone());
+        self.mode = PermissionMode::Plan;
+        self.plan_file_path = Some(format!("plan-{}.md", chrono::Utc::now().timestamp()));
+    }
+    fn exit_plan(&mut self) {
+        self.mode = self.pre_plan_mode.take().unwrap_or(PermissionMode::Default);
+        self.plan_file_path = None;
+    }
+    fn is_tool_allowed(&self, tool: &str) -> bool {
+        match &self.mode {
+            PermissionMode::Plan => matches!(tool, "read_file" | "list_files" | "grep_search"),
+            _ => true,
+        }
+    }
+}
+```
+
+> **Rust vs TS 差异：** Rust 的 `Option::take()` 取出值并将 Option 置为 None，天然实现读取并清空语义。
+
 ## 实战练习
 
 ### 练习 1：运行 Plan 模式

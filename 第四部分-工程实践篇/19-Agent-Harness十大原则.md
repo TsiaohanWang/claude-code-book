@@ -220,6 +220,35 @@ Claude Code 的协调器模式遵循"只编排不执行"的约束：Coordinator 
 
 ---
 
+
+
+**Rust 实现**（十大原则自检工具）：
+
+```rust
+// 十大原则自检清单
+struct Principle { id: u8, name: &'static str, detail: &'static str }
+
+const PRINCIPLES: &[Principle] = &[
+    Principle { id: 1, name: "约束执行", detail: "工具执行前有权限检查吗？" },
+    Principle { id: 2, name: "Prompt 是控制平面", detail: "系统 Prompt 从多层组装？" },
+    Principle { id: 3, name: "错误是主路径", detail: "有重试、断路器、恢复路径？" },
+    Principle { id: 4, name: "工具调度纪律", detail: "工具按并发安全分区？" },
+    Principle { id: 5, name: "高风险高约束", detail: "bash/write 有更严格检查？" },
+    Principle { id: 6, name: "恢复可熔断", detail: "自动恢复有计数器和断路器？" },
+    Principle { id: 7, name: "上下文是预算", detail: "有多级压缩？" },
+    Principle { id: 8, name: "记忆只存不可推导", detail: "记忆系统只保存无法推导的信息？" },
+    Principle { id: 9, name: "工作不等于验证", detail: "验证者与实现者分离？" },
+    Principle { id: 10, name: "结构比聪明可靠", detail: "依赖显式状态机？" },
+];
+
+fn audit() {
+    for p in PRINCIPLES {
+        println!("  #{} {}: {}", p.id, p.name, p.detail);
+    }
+}
+```
+
+
 ## 结语
 
 这十条原则不是教条——它们是从 Claude Code 的具体实践中提炼出的通用智慧。当你在自己的项目中遇到 Claude Code 没有覆盖的场景时，回到这些原则，问自己：

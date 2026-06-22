@@ -539,6 +539,54 @@ const setState = useSetAppState();
 
 ---
 
+
+
+**Rust 实现**（配置合并算法）：
+
+```rust
+// 对应 Claude Code src/utils/settings.ts 的 deepMerge
+use std::collections::HashMap;
+
+#[derive(Debug, Clone)]
+struct Settings {
+    permissions: Option<Permissions>,
+    model: Option<String>,
+    theme: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct Permissions {
+    allow: Vec<String>,
+    deny: Vec<String>,
+}
+
+// 深度合并：数组拼接去重，对象递归合并，标量直接覆盖
+fn deep_merge(target: &mut serde_json::Value, source: &serde_json::Value) {
+    if let (Some(t_obj), Some(s_obj)) = (target.as_object_mut(), source.as_object()) {
+        for (key, s_val) in s_obj {
+            if let Some(t_val) = t_obj.get_mut(key) {
+                if t_val.is_array() && s_val.is_array() {
+                    // 数组拼接去重
+                    let mut merged: Vec<serde_json::Value> = t_val.as_array().unwrap().clone();
+                    for item in s_val.as_array().unwrap() {
+                        if !merged.contains(item) { merged.push(item.clone()); }
+                    }
+                    *t_val = serde_json::Value::Array(merged);
+                } else if t_val.is_object() && s_val.is_object() {
+                    deep_merge(t_val, s_val); // 递归合并
+                } else {
+                    *t_val = s_val.clone(); // 标量覆盖
+                }
+            } else {
+                t_obj.insert(key.clone(), s_val.clone());
+            }
+        }
+    }
+}
+```
+
+> **Rust vs TS 差异：** Rust 的 `serde_json::Value` 是动态类型，运行时检查；TS 的对象字面量是静态类型。Rust 的 `if let Some(t_val) = t_obj.get_mut(key)` 模式匹配确保安全访问，TS 直接用 `target[key]` 可能 panic。
+
 ## 实战练习
 
 ### 练习 1：运行配置合并算法
