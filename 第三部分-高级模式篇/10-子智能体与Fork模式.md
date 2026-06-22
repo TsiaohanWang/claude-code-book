@@ -711,6 +711,59 @@ main();
 
 ---
 
+
+
+**Rust 实现**（对应 `code/src/main.rs` 中的多 Agent 系统）：
+
+```rust
+// 对应 Claude Code src/tools/AgentTool.ts + src/agents/
+
+// 三种 Agent 类型（对应 Claude Code 的内置 Agent）
+enum AgentType {
+    Explore,  // 只读，快速搜索（haiku 模型）
+    Plan,     // 只读，制定计划
+    General,  // 全工具，通用任务
+}
+
+impl AgentType {
+    fn tools(&self) -> Vec<&str> {
+        match self {
+            Self::Explore | Self::Plan => vec!["read_file", "list_files", "grep_search"],
+            Self::General => vec!["read_file", "write_file", "edit_file", "list_files", "grep_search", "bash"],
+        }
+    }
+}
+
+// Fork 模式 —— 继承父上下文
+struct ForkedAgent {
+    agent_type: AgentType,
+    inherited_messages: Vec<Message>,  // 从父 Agent 继承
+    own_messages: Vec<Message>,        // 自己的消息
+}
+
+// 协调器 —— 只编排不执行
+struct Coordinator {
+    agents: Vec<AgentType>,
+}
+
+impl Coordinator {
+    fn can_execute_tools(&self) -> bool { false }  // 核心约束
+
+    async fn decompose_and_run(&self, goal: &str) -> Vec<AgentResult> {
+        let tasks = self.decompose_goal(goal);
+        let mut results = Vec::new();
+        for task in tasks {
+            let agent = self.assign_agent(&task);
+            let result = agent.run(task.description).await;
+            results.push(result);
+        }
+        results
+    }
+}
+```
+
+> **Rust vs TypeScript 差异：** Rust 的 `async fn` 返回 `impl Future`，需要 `tokio` 运行时来执行。TS 的 `async function` 返回 `Promise`，由浏览器/Node.js 事件循环驱动。两者的并发模型不同但概念对应。
+
 ### 练习：运行 Rust 实现并对照源码
 
 > **配套代码：** `code/src/main.rs` 用 Rust 实现了本章的核心概念。

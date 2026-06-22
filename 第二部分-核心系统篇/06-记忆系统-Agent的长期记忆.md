@@ -719,6 +719,70 @@ type: feedback
 
 ---
 
+
+
+**Rust 实现**（对应 `code/src/main.rs` 中的记忆系统）：
+
+```rust
+// 对应 Claude Code src/memdir/ 的记忆系统
+// 四种记忆类型：user / feedback / project / reference
+
+#[derive(Debug, Clone, PartialEq)]
+enum MemoryType {
+    User,      // 用户级偏好，跨项目持久
+    Feedback,  // 用户反馈，纠错/补充
+    Project,   // 项目级知识，架构决策
+    Reference, // 参考资料，API 文档
+}
+
+struct MemoryEntry {
+    name: String,
+    description: String,
+    memory_type: MemoryType,
+    content: String,
+}
+
+// YAML Frontmatter 解析（对应 src/frontmatter.ts）
+fn parse_frontmatter(raw: &str) -> (std::collections::HashMap<String, String>, String) {
+    let re = regex::Regex::new(r"^---
+(.*?)
+---
+(.*)$"s").unwrap();
+    if let Some(caps) = re.captures(raw) {
+        let meta_str = &caps[1];
+        let body = caps[2].to_string();
+        let mut meta = std::collections::HashMap::new();
+        for line in meta_str.lines() {
+            if let Some((key, val)) = line.split_once(":") {
+                meta.insert(key.trim().to_string(), val.trim().to_string());
+            }
+        }
+        (meta, body)
+    } else {
+        (std::collections::HashMap::new(), raw.to_string())
+    }
+}
+
+// MEMORY.md 索引更新（对应 src/memdir/memdir.ts）
+fn update_memory_index(memories: &[MemoryEntry]) -> String {
+    let mut index = String::from("# Memory Index
+
+");
+    for m in memories {
+        index.push_str(&format!(
+            "- **[{}]** ({}) — {}
+",
+            m.name,
+            m.memory_type.as_str(),
+            m.description
+        ));
+    }
+    index
+}
+```
+
+> **Rust vs TypeScript 差异：** Rust 的 `enum` 是代数数据类型（ADT），每个变体可以携带不同类型的数据。TS 的联合类型 `"user" | "feedback"` 只是字符串字面量的并集，无法携带数据。Rust 的 `enum` 更强大，编译器会确保你处理了所有变体。
+
 ### 练习：运行 Rust 实现并对照源码
 
 > **配套代码：** `code/src/main.rs` 用 Rust 实现了本章的核心概念。

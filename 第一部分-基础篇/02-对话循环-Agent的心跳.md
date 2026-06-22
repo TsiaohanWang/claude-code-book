@@ -482,6 +482,46 @@ async function main() {
 main();
 ```
 
+**Rust 实现**（对应 `code/src/main.rs` 中的重试逻辑）：
+
+```rust
+// 对应 Claude Code src/agent.ts:36-61 的 withRetry
+// Rust 使用 async/await + tokio 实现异步，与 TS 的 Promise 对应
+
+async fn with_retry<F, Fut, T>(max_retries: u32, mut f: F) -> Result<T, anyhow::Error>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<T, anyhow::Error>>,
+{
+    let mut retries = 0;
+    loop {
+        match f().await {
+            Ok(val) => return Ok(val),
+            Err(e) if retries < max_retries && is_retryable(&e) => {
+                retries += 1;
+                let delay = std::cmp::min(1000 * 2u64.pow(retries), 30000);
+                tracing::warn!("Retry {retries}/{max_retries} after {delay}ms: {e}");
+                tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+fn is_retryable(err: &anyhow::Error) -> bool {
+    let msg = err.to_string();
+    msg.contains("429") || msg.contains("503") || msg.contains("529")
+        || msg.contains("overloaded") || msg.contains("ECONNRESET")
+}
+```
+
+> **Rust vs TypeScript 差异说明：**
+> - TS 的 `async/await` 直接对应 Rust 的 `async/await`，但 Rust 需要 `tokio` 运行时
+> - TS 的 `Promise<T>` 对应 Rust 的 `Result<T, anyhow::Error>`（Rust 用 `Result` 区分成功/失败）
+> - TS 的 `throw` 对应 Rust 的 `return Err(...)`
+> - TS 的 `try/catch` 对应 Rust 的 `match` 或 `?` 操作符
+> - Rust 的 `FnMut() -> Fut` 对应 TS 的 `() => Promise<T>`（闭包返回 Future）
+
 ### 练习 3：运行 Rust 实现并对照源码
 
 > **配套代码：** `code/src/main.rs` 用 Rust 实现了本章的核心概念。

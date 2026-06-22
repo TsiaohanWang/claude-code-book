@@ -675,6 +675,53 @@ main();
 
 ---
 
+
+
+**Rust 实现**（对应 `code/src/main.rs` 中的上下文管理和断路器）：
+
+```rust
+// 对应 Claude Code src/services/compact/ 的上下文管理
+
+// 有效窗口计算（对应 getEffectiveContextWindowSize）
+fn get_effective_window(model_window: usize, max_output_tokens: usize) -> usize {
+    let reserved = max_output_tokens.min(20000);
+    model_window - reserved
+}
+
+// 断路器（对应 autoCompact.ts 的 MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES）
+struct CircuitBreaker {
+    failures: usize,
+    max_failures: usize,  // 默认 3
+}
+
+impl CircuitBreaker {
+    fn can_try(&self) -> bool { self.failures < self.max_failures }
+    fn record_success(&mut self) { self.failures = 0; }
+    fn record_failure(&mut self) { self.failures += 1; }
+}
+
+// 五级压缩管线
+enum CompressionLevel {
+    None,              // < 50%
+    ToolResultBudget,  // 50-65%
+    Snip,              // 65-75%
+    Microcompact,      // 75-85%
+    AutoCompact,       // > 85%
+}
+
+fn determine_compression(usage_ratio: f64) -> CompressionLevel {
+    match usage_ratio as u32 {
+        0..=49 => CompressionLevel::None,
+        50..=64 => CompressionLevel::ToolResultBudget,
+        65..=74 => CompressionLevel::Snip,
+        75..=84 => CompressionLevel::Microcompact,
+        _ => CompressionLevel::AutoCompact,
+    }
+}
+```
+
+> **Rust vs TypeScript 差异：** Rust 的 `match` 表达式必须穷尽所有可能值。上面的 `match usage_ratio as u32` 使用范围模式 `0..=49` 匹配 0-49，编译器确保覆盖了所有 u32 值。TS 的 `if-else` 链没有这个保证，容易遗漏边界情况。
+
 ### 练习：运行 Rust 实现并对照源码
 
 > **配套代码：** `code/src/main.rs` 用 Rust 实现了本章的核心概念。

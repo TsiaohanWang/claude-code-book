@@ -1287,6 +1287,66 @@ main();
 
 ---
 
+
+
+**Rust 实现**（对应 `code/src/main.rs` 中的 MCP 客户端）：
+
+```rust
+// 对应 Claude Code src/mcp/mcpClient.ts 的 MCP 客户端
+// JSON-RPC 2.0 over stdio
+
+// JSON-RPC 请求/响应
+#[derive(serde::Serialize)]
+struct JsonRpcRequest {
+    jsonrpc: &'static str,  // "2.0"
+    id: u32,
+    method: String,
+    params: serde_json::Value,
+}
+
+#[derive(serde::Deserialize)]
+struct JsonRpcResponse {
+    jsonrpc: String,
+    id: u32,
+    result: Option<serde_json::Value>,
+    error: Option<JsonRpcError>,
+}
+
+// MCP 工具发现（initialize → tools/list → tools/call）
+struct McpClient {
+    server_name: String,
+    next_id: u32,
+    tools: Vec<McpToolInfo>,
+}
+
+impl McpClient {
+    async fn initialize(&mut self) -> Result<()> {
+        let resp = self.send_request("initialize", serde_json::json!({
+            "protocolVersion": "2024-11-05",
+            "capabilities": {"tools": {}},
+            "clientInfo": {"name": "mini-claude", "version": "0.1"}
+        })).await?;
+        println!("Connected to {}", self.server_name);
+        Ok(())
+    }
+
+    async fn discover_tools(&mut self) -> Result<()> {
+        let resp = self.send_request("tools/list", serde_json::json!({})).await?;
+        // 三段式命名：mcp__serverName__toolName
+        self.tools = resp["tools"].as_array().unwrap().iter()
+            .map(|t| McpToolInfo {
+                name: format!("mcp__{}__{}", self.server_name, t["name"].as_str().unwrap()),
+                description: t["description"].as_str().unwrap_or("").to_string(),
+                input_schema: t["inputSchema"].clone(),
+            })
+            .collect();
+        Ok(())
+    }
+}
+```
+
+> **Rust vs TypeScript 差异：** Rust 的 `serde::Serialize/Deserialize` derive 宏在编译时生成 JSON 序列化代码，运行时零开销。TS 的 `JSON.stringify/parse` 是运行时反射，性能较低但更灵活。
+
 ### 练习：运行 Rust 实现并对照源码
 
 > **配套代码：** `code/src/main.rs` 用 Rust 实现了本章的核心概念。

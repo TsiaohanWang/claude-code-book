@@ -664,6 +664,57 @@ main();
 
 ---
 
+**Rust 实现**（对应 `code/src/main.rs` 中的四阶段权限管线）：
+
+```rust
+// 对应 Claude Code 的四阶段权限管线
+// 源码参考：src/hooks/useCanUseTool.tsx, src/permissions/
+
+// 阶段一：validateInput — 输入验证
+fn stage_validate_input(tool_name: &str, input: &serde_json::Value, registry: &ToolRegistry) -> bool {
+    // 检查工具是否存在
+    if registry.get(tool_name).is_none() { return false; }
+    // 检查 input 是否为有效 JSON 对象
+    input.is_object()
+}
+
+// 阶段二：rule_matching — 规则匹配（deny > ask > allow）
+fn stage_rule_matching(tool_name: &str, rules: &[PermissionRule]) -> Option<PermissionDecision> {
+    for rule in rules {
+        if rule.matches(tool_name) {
+            return Some(rule.decision.clone());
+        }
+    }
+    None // 无匹配 → 进入下一阶段
+}
+
+// 阶段三：check_permissions — 模式检查
+fn check_by_mode(mode: &PermissionMode, tool_name: &str) -> PermissionDecision {
+    match mode {
+        PermissionMode::Default => PermissionDecision::Ask,
+        PermissionMode::Plan => {
+            if ["read_file", "list_files", "grep_search"].contains(&tool_name) {
+                PermissionDecision::Allow
+            } else {
+                PermissionDecision::Deny
+            }
+        }
+        PermissionMode::BypassPermissions => PermissionDecision::Allow,
+        PermissionMode::DontAsk => PermissionDecision::Deny,
+        PermissionMode::Auto => PermissionDecision::Allow,
+        PermissionMode::AcceptEdits => {
+            if ["edit_file", "write_file"].contains(&tool_name) {
+                PermissionDecision::Allow
+            } else {
+                PermissionDecision::Ask
+            }
+        }
+    }
+}
+```
+
+> **Rust vs TypeScript 差异：** Rust 的 `match` 是穷尽匹配——编译器确保你处理了所有枚举变体。如果新增一个 `PermissionMode` 变体但忘记在 `match` 中处理，编译会失败。TS 的 `switch` 没有这个保证。
+
 ### 练习：运行 Rust 实现并对照源码
 
 > **配套代码：** `code/src/main.rs` 用 Rust 实现了本章的核心概念。

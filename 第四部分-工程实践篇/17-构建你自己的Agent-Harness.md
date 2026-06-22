@@ -1251,6 +1251,57 @@ flowchart TD
 
 ---
 
+**Rust 实现**（对应 `code/src/main.rs` 中的 Mini Claude Code 集成）：
+
+```rust
+// 对应 Claude Code 全模块集成
+// 将 Ch02-Ch15 的所有组件组合为一个完整的 Agent
+
+struct MiniClaudeCode {
+    client: ClaudeClient,           // Ch01: API 客户端
+    router: ToolRouter,             // Ch03: 工具系统
+    permission_manager: PermissionManager, // Ch04: 权限管线
+    context_state: ContextState,    // Ch07: 上下文管理
+    memory_manager: MemoryManager,  // Ch06: 记忆系统
+    hook_pipeline: HookPipeline,    // Ch09: 钩子系统
+    mcp_manager: McpManager,        // Ch13: MCP 集成
+    messages: Vec<Message>,         // 消息历史
+}
+
+impl MiniClaudeCode {
+    // 核心循环 —— 对应 Ch02 的 agent_loop
+    async fn run(&mut self, user_input: &str) -> Result<String> {
+        self.messages.push(Message { role: "user".into(), content: user_input.into() });
+
+        loop {
+            // Ch07: 压缩检查
+            self.check_and_compact().await?;
+
+            // Ch01: API 调用
+            let response = self.client.send(&self.messages, &self.router.specs()).await?;
+
+            match response {
+                ResponseItem::ToolUse { calls } => {
+                    // Ch04: 权限检查 + Ch03: 工具执行
+                    for call in &calls {
+                        let decision = self.permission_manager.check(&call.name, &call.input);
+                        if decision == PermissionDecision::Deny {
+                            // 拒绝工具调用
+                            continue;
+                        }
+                        let result = self.router.execute(&call.id, &call.name, &call.input);
+                        self.messages.push(Message { role: "user".into(), content: result.format_for_model(4096) });
+                    }
+                }
+                ResponseItem::Message { content } => {
+                    return Ok(content);
+                }
+            }
+        }
+    }
+}
+```
+
 ### 练习：运行 Rust 实现并对照源码
 
 > **配套代码：** `code/src/main.rs` 用 Rust 实现了本章的核心概念。

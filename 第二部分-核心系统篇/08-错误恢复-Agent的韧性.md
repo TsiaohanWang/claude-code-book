@@ -333,6 +333,42 @@ async function withRetry<T>(
 - **随机抖动**：`+ Math.random() * 1000` 避免多个客户端同时重试造成雷群效应
 - **中止感知**：`signal?.aborted` 检查确保用户按 Ctrl+C 时立即停止重试
 
+**Rust 实现**（对应 `code/src/main.rs` 中的重试逻辑）：
+
+```rust
+// 对应 Claude Code src/agent.ts:36-61
+// Rust 使用 tokio::time::sleep 实现异步等待
+// 使用 anyhow::Error 统一错误类型
+
+fn is_retryable(err: &anyhow::Error) -> bool {
+    let msg = err.to_string();
+    msg.contains("429") || msg.contains("503") || msg.contains("529")
+        || msg.contains("overloaded") || msg.contains("ECONNRESET")
+}
+
+async fn with_retry<F, Fut, T>(max_retries: u32, mut f: F) -> Result<T, anyhow::Error>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<T, anyhow::Error>>,
+{
+    let mut retries = 0;
+    loop {
+        match f().await {
+            Ok(val) => return Ok(val),
+            Err(e) if retries < max_retries && is_retryable(&e) => {
+                retries += 1;
+                let delay = std::cmp::min(1000 * 2u64.pow(retries), 30000)
+                    + (rand::random::<u64>() % 1000);
+                tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+```
+
+> **Rust 特有优势：** Rust 的 `Result<T, E>` 在编译时强制调用者处理错误——不处理就编译失败。TS 的 `try/catch` 是可选的，容易遗漏。这对应 Claude Code 的"错误是主路径"原则——Rust 让你无法忽视错误。
+
 ### 8.5.3 断路器的设计原则
 
 **任何自动恢复必须满足三个条件：**

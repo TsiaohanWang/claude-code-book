@@ -1096,6 +1096,66 @@ main();
 
 ---
 
+
+
+**Rust 实现**（对应 `code/src/main.rs` 中的钩子系统）：
+
+```rust
+// 对应 Claude Code src/hooks/ 的钩子系统
+
+// 五种 Hook 类型（官方文档 code.claude.com/docs/en/hooks）
+enum HookType {
+    PreToolUse,    // 工具执行前，可拦截
+    PostToolUse,   // 工具执行后，可修改输出
+    Notification,  // 消息通知
+    Stop,          // Agent 循环停止
+    SubagentStop,  // 子 Agent 停止
+}
+
+// Hook 决策（对应 Claude Code 的 permissionDecision）
+enum HookDecision {
+    Allow,
+    Deny { reason: String },
+    ModifyInput { new_input: serde_json::Value },
+}
+
+// Hook trait —— 每个 Hook 实现此接口
+trait Hook: Send + Sync {
+    fn name(&self) -> &str;
+    fn hook_type(&self) -> HookType;
+    fn pattern(&self) -> &str;  // glob 匹配模式
+    fn execute(&self, ctx: &HookContext) -> HookDecision;
+
+    fn matches(&self, tool_name: &str) -> bool {
+        let pat = self.pattern();
+        if pat == "*" { return true; }
+        if let Some(prefix) = pat.strip_suffix('*') {
+            return tool_name.starts_with(prefix);
+        }
+        pat == tool_name
+    }
+}
+
+// Hook 管线 —— 按优先级链式执行
+struct HookPipeline { hooks: Vec<Box<dyn Hook>> }
+
+impl HookPipeline {
+    fn execute_all(&self, ctx: &HookContext) -> HookDecision {
+        for hook in &self.hooks {
+            if !matches!(hook.hook_type(), HookType::PreToolUse) { continue; }
+            if !hook.matches(&ctx.tool_name) { continue; }
+            match hook.execute(ctx) {
+                HookDecision::Deny { reason } => return HookDecision::Deny { reason },
+                other => { /* 继续执行下一个 hook */ }
+            }
+        }
+        HookDecision::Allow
+    }
+}
+```
+
+> **Rust vs TypeScript 差异：** Rust 的 `trait Hook: Send + Sync` 要求所有 Hook 实现必须是线程安全的（可跨线程传递和共享）。这在编译期保证了 Hook 的并发安全，对应 Claude Code 中 Hook 的 `isConcurrencySafe` 运行时检查。
+
 ### 练习：运行 Rust 实现并对照源码
 
 > **配套代码：** `code/src/main.rs` 用 Rust 实现了本章的核心概念。
